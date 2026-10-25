@@ -1,0 +1,304 @@
+// Tasks are the single source of truth: commitments, help requests, the
+// weekly cards, and (later) the timeline all point at Task rows.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Member {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         String // e.g. "Director of Research"
+  kind         String   @default("exec") // exec | adviser | faculty
+  // What this person may do. Admins tick these per person (see lib/permissions.ts).
+  canPropose         Boolean @default(true)
+  canCreateProjects  Boolean @default(false)
+  canApprove         Boolean @default(false)
+  canManageTasks     Boolean @default(false)
+  canWriteNotes      Boolean @default(false)
+  canManageTemplates Boolean @default(false)
+  canManageMembers   Boolean @default(false)
+  // Secret key in this person's private calendar feed URL; reset to revoke.
+  calendarToken      String? @unique
+  // Avatar look, chosen on your profile.
+  avatarColor        String  @default("blue")
+  avatarShape        String  @default("circle")
+  avatarFace         String  @default("initials")
+  avatarExtra        String  @default("none")
+  tutorialSeenAt     DateTime?
+  lastSeenAt         DateTime? // last heartbeat from an open, visible hub tab
+  sortOrder    Int      @default(100)
+  bio          String   @default("")
+  lore         String   @default("")
+  askMeAbout   String   @default("")
+  wantToLearn  String   @default("")
+  joinedAt     DateTime? // set on first successful sign-in
+  createdAt    DateTime @default(now())
+
+  sessions       Session[]
+  tokens         LoginToken[]
+  ownedProjects  Project[]     @relation("ProjectOwner")
+  proposed       Project[]     @relation("ProjectProposer")
+  ownedTasks     Task[]        @relation("TaskOwner")
+  assignedTasks  Task[]        @relation("TaskAssigner")
+  meetings       Meeting[]
+  notifications  Notification[] @relation("NotifyTo")
+  sentPings      Notification[] @relation("NotifyFrom")
+  commitments    Commitment[]
+  checkIns       CheckIn[]
+  helpRequests   HelpRequest[]
+  helpOffers     HelpOffer[]
+  comments       Comment[]
+  links          Link[]
+  accomplishments Accomplishment[]
+  shoutoutsGiven  Shoutout[]     @relation("ShoutoutFrom")
+  shoutoutsGot    Shoutout[]     @relation("ShoutoutTo")
+}
+
+// Single-use, expiring sign-in link. Only the SHA-256 hash is stored.
+model LoginToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  memberId  String
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Project {
+  id           String    @id @default(cuid())
+  title        String
+  goal         String    @default("")
+  status       String    @default("active") // proposed | active | done | declined
+  // "folder" = a standing area (e.g. Brand & Marketing) that's never done;
+  // "project" = something with an end.
+  kind         String    @default("project")
+  due          String? // YYYY-MM-DD
+  ownerId      String?
+  owner        Member?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  proposedById String?
+  proposedBy   Member?   @relation("ProjectProposer", fields: [proposedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+
+  tasks    Task[]
+  links    Link[]
+  comments Comment[]
+}
+
+model Task {
+  id            String    @id @default(cuid())
+  title         String // phrased as an outcome
+  description   String    @default("")
+  status        String    @default("todo") // todo | in_progress | blocked | done | dropped
+  blockedReason String    @default("")
+  due           String? // YYYY-MM-DD
+  dueTime       String? // HH:MM (24h, Duke time); no time = an all-day deadline
+  reminderSentFor String? // the due date a "due tomorrow" email was last sent for
+  isMilestone   Boolean   @default(false)
+  projectId     String?
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // No owner = "up for grabs": anyone on the board can take it on.
+  ownerId       String?
+  owner         Member?   @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignedById  String?
+  assignedBy    Member?   @relation("TaskAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  meetingId     String? // set when the task is an action item from a meeting
+  meeting       Meeting?  @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  waitingOnId   String?
+  waitingOn     Task?     @relation("WaitingOn", fields: [waitingOnId], references: [id], onDelete: SetNull)
+  blocking      Task[]    @relation("WaitingOn")
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  commitments  Commitment[]
+  helpRequests HelpRequest[]
+  helpOffers   HelpOffer[]
+  comments     Comment[]
+  links        Link[]
+}
+
+// A task someone has committed to for a given week (max 3 per person).
+model Commitment {
+  id        String @id @default(cuid())
+  memberId  String
+  member    Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  weekStart String // Monday, YYYY-MM-DD
+
+  @@unique([memberId, taskId, weekStart])
+}
+
+model CheckIn {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  weekStart   String
+  note        String   @default("")
+  submittedAt DateTime @default(now())
+
+  @@unique([memberId, weekStart])
+}
+
+model HelpRequest {
+  id            String   @id @default(cuid())
+  taskId        String
+  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy   Member   @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  message       String
+  status        String   @default("open") // open | resolved
+  createdAt     DateTime @default(now())
+}
+
+// The helper says what they will do; the task owner stays responsible.
+model HelpOffer {
+  id           String   @id @default(cuid())
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  helperId     String
+  helper       Member   @relation(fields: [helperId], references: [id], onDelete: Cascade)
+  contribution String
+  status       String   @default("offered") // offered | accepted | declined
+  createdAt    DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  authorId  String
+  author    Member   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// Drive/Docs links live next to the work they belong to.
+model Link {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  addedById String
+  addedBy   Member   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// Recurring workflows (speaker event, workshop…). Task dates are offsets from
+// the project's due date, and "role" picks the default owner by exec role.
+model Template {
+  id          String         @id @default(cuid())
+  name        String
+  description String         @default("")
+  createdAt   DateTime       @default(now())
+  tasks       TemplateTask[]
+}
+
+model TemplateTask {
+  id                String   @id @default(cuid())
+  templateId        String
+  template          Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  position          Int
+  title             String
+  offsetDays        Int      @default(0) // relative to the project's due date; negative = before
+  isMilestone       Boolean  @default(false)
+  role              String   @default("")
+  waitingOnPosition Int?
+}
+
+// A win on someone's profile. Suggested ones come from finished work (a
+// project, a milestone, or accepted help); the person decides whether each
+// is shown or hidden. Manual ones are anything else worth bragging about.
+model Accomplishment {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @default("")
+  date        String // YYYY-MM-DD
+  source      String   @default("manual") // manual | project | task | help
+  sourceId    String? // project, task, or help offer id the suggestion came from
+  shown       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([memberId, source, sourceId])
+}
+
+// One line of thanks. No counts, no rankings.
+model Shoutout {
+  id        String   @id @default(cuid())
+  fromId    String
+  from      Member   @relation("ShoutoutFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId      String
+  to        Member   @relation("ShoutoutTo", fields: [toId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+}
+
+// One page per exec meeting: notes, decisions, and action items (tasks).
+model Meeting {
+  id          String   @id @default(cuid())
+  date        String // YYYY-MM-DD
+  time        String? // HH:MM (24h, Duke time)
+  title       String   @default("Exec meeting")
+  notes       String   @default("")
+  decisions   String   @default("")
+  createdById String?
+  createdBy   Member?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tasks       Task[]
+}
+
+// The last few things each person did that can be taken back. Undo looks
+// the entry up by id, checks it's theirs and recent, then reverses it.
+model UndoEntry {
+  id        String    @id @default(cuid())
+  memberId  String
+  kind      String
+  payload   String // JSON describing how to reverse the action
+  label     String // what gets reported after undoing, e.g. "Task marked done"
+  back      String   @default("/")
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+}
+
+// A ping: someone @mentioned you, or something happened that needs you
+// (an assignment, a help offer, a decision on your idea).
+model Notification {
+  id        String    @id @default(cuid())
+  toId      String
+  to        Member    @relation("NotifyTo", fields: [toId], references: [id], onDelete: Cascade)
+  fromId    String?
+  from      Member?   @relation("NotifyFrom", fields: [fromId], references: [id], onDelete: SetNull)
+  text      String
+  href      String
+  readAt    DateTime?
+  // none (never emailed) | pending (goes out in the next morning email) | sent
+  emailState String   @default("none")
+  createdAt DateTime  @default(now())
+
+  @@index([toId, readAt])
+  @@index([emailState])
+}
