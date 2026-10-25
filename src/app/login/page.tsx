@@ -38,13 +38,19 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <>
           <h1>Sign in</h1>
           <p className="lede">The T4C exec board&apos;s shared week: who&apos;s doing what, and where you can help.</p>
+          {error === "netid" && (
+            <div className="notice notice-error">
+              Use your Duke <strong>alias</strong> email, like first.last@duke.edu, not your NetID address. Both reach the same inbox,
+              but the hub knows you by your alias.
+            </div>
+          )}
           {error === "expired" && (
             <div className="notice notice-error">That link expired or was already used. Request a new one below; it only takes a moment.</div>
           )}
           <form action={requestLogin} className="stack" style={{ marginTop: 16 }}>
             <label>
-              Your Duke email
-              <input type="email" name="email" required autoFocus autoComplete="email" placeholder="netid@duke.edu" />
+              Your Duke alias email
+              <input type="email" name="email" required autoFocus autoComplete="email" placeholder="first.last@duke.edu" />
             </label>
             <button type="submit" className="wide">Email me a sign-in link</button>
           </form>

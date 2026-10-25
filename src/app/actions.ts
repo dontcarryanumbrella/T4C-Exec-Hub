@@ -192,10 +192,17 @@ export async function undo(fd: FormData) {
 
 // ---------- sign-in ----------
 
+// Duke NetID addresses (letters then digits, like abc123@duke.edu) reach the
+// same inbox as the person's alias, but members are saved by alias.
+const NETID_EMAIL = /^[a-z]{2,4}\d+@duke\.edu$/;
+
 export async function requestLogin(fd: FormData) {
   const email = str(fd, "email", 254).toLowerCase();
   if (isEmail(email) && (await ipAllowed())) {
     const member = await db.member.findUnique({ where: { email } });
+    // Point NetID addresses to the alias instead of silently sending nothing.
+    // A member saved under their NetID still signs in normally.
+    if (!member && NETID_EMAIL.test(email)) redirect("/login?error=netid");
     if (member && (await canSendLoginLink(member.id))) {
       const link = await createLoginLink(member.id, LOGIN_LINK_MINUTES);
       await sendEmail(

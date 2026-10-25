@@ -309,3 +309,28 @@ test("morning emails wait until someone has signed in, then skip pings from befo
   assert.doesNotMatch(emails[0].text, /before joining/);
   assert.equal([...emails[0].pingIds].sort().join(","), "new,old");
 });
+
+test("NetID addresses get a reminder to use the alias, unless a member is saved under one", async () => {
+  const f = fixture();
+  f.state.member[0].email = "alex.a@duke.edu";
+  f.state.member[1].email = "bb12@duke.edu";
+  let sentTo = null;
+  const actions = load("src/app/actions.ts", {
+    ...f.mocks,
+    "next/headers": { headers: async () => new Map() },
+    "@/lib/auth": {
+      ...f.mocks["@/lib/auth"],
+      canSendLoginLink: async () => true,
+      createLoginLink: async () => "https://hub.test/auth/verify?token=x",
+    },
+    "@/lib/email": { sendEmail: async (to) => { sentTo = to; } },
+  });
+  await redirected(() => actions.requestLogin(form({ email: "ab123@duke.edu" })), "/login?error=netid");
+  assert.equal(sentTo, null);
+  await redirected(() => actions.requestLogin(form({ email: "BB12@duke.edu" })), "/login?sent=1");
+  assert.equal(sentTo, "bb12@duke.edu");
+  sentTo = null;
+  await redirected(() => actions.requestLogin(form({ email: "alex.a@duke.edu" })), "/login?sent=1");
+  assert.equal(sentTo, "alex.a@duke.edu");
+  await redirected(() => actions.requestLogin(form({ email: "someone.else@duke.edu" })), "/login?sent=1");
+});
