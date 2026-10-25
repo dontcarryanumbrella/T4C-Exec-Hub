@@ -30,39 +30,7 @@ export function taskStatus(t: StatusInput, today: string): { text: string; tone:
   return { text: `Not started${dueText}`, tone: "muted" };
 }
 
-export function isAttention(t: StatusInput, today: string): boolean {
-  return taskStatus(t, today).tone === "attention";
-}
-
-// "4 of 6 tasks done; Book room blocked" — more useful than a percentage.
-export function projectSummary(tasks: (StatusInput & { title: string })[], today: string): string {
-  const live = tasks.filter((t) => t.status !== "dropped");
-  if (live.length === 0) return "No tasks yet";
-  const done = live.filter((t) => t.status === "done").length;
-  const flagged = live
-    .filter((t) => t.status !== "done")
-    .map((t) => ({ title: t.title, s: taskStatus(t, today) }))
-    .filter((x) => x.s.tone === "attention");
-  let text = `${done} of ${live.length} tasks done`;
-  if (flagged.length) {
-    const first = flagged[0];
-    const word = first.s.text.startsWith("Blocked") ? "blocked" : first.s.text.startsWith("Needs") ? "needs help" : "overdue";
-    text += `; ${first.title} ${word}`;
-    if (flagged.length > 1) text += ` (+${flagged.length - 1} more)`;
-  }
-  return text;
-}
-
-export const TASK_STATUSES = [
-  { value: "todo", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "blocked", label: "Blocked" },
-  { value: "done", label: "Done" },
-  { value: "dropped", label: "Dropped" },
-];
-
-// One or two words for tight spots (lists, timeline chips); the full
-// sentence goes in a tooltip.
+// One or two words for tight spots (lists); the full sentence goes in a tooltip.
 export function shortStatus(text: string): string {
   if (text.startsWith("Blocked")) return "Blocked";
   if (text.startsWith("Overdue")) return "Overdue";
@@ -72,8 +40,8 @@ export function shortStatus(text: string): string {
   return text;
 }
 
-// Short version of projectSummary for list rows: progress plus how many
-// tasks need attention, e.g. { progress: "2 of 9 done", attention: 3 }.
+// For list rows: progress plus how many tasks need attention,
+// e.g. { progress: "2 of 9 done", attention: 3 }.
 export function projectBrief(tasks: StatusInput[], today: string): { progress: string; attention: number } {
   const live = tasks.filter((t) => t.status !== "dropped");
   const done = live.filter((t) => t.status === "done").length;

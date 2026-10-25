@@ -61,10 +61,6 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((toUTC(to).getTime() - toUTC(from).getTime()) / 86_400_000);
 }
 
-export function formatShort(iso: string): string {
-  return toUTC(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
 export function isoFromDate(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
 }

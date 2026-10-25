@@ -12,8 +12,6 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  // Lets a verification build run beside a live dev server without sharing .next.
-  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
