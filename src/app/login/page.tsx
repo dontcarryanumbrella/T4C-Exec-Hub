@@ -16,8 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <>
           <h1>Check your email</h1>
           <p className="lede">
-            If that address belongs to a T4C exec, a sign-in link is on its way. It works
-            once and expires in 30 minutes.
+            A sign-in link is on its way. It works once and expires in 30 minutes.
           </p>
           <ol className="steps">
             <li>Open the email from the T4C Hub.</li>
@@ -42,6 +41,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <div className="notice notice-error">
               Use your Duke <strong>alias</strong> email, like first.last@duke.edu, not your NetID address. Both reach the same inbox,
               but the hub knows you by your alias.
+            </div>
+          )}
+          {error === "unknown" && (
+            <div className="notice notice-error">
+              We don&apos;t recognize that email. Use the Duke <strong>alias</strong> email the board has on file for you, like
+              first.last@duke.edu, and check the spelling. Still stuck? Ask the VP to check which address you&apos;re listed under.
             </div>
           )}
           {error === "expired" && (

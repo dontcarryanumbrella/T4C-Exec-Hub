@@ -1,6 +1,6 @@
 import { addDays } from "./dates";
+import { appUrl } from "./url";
 
-const appUrl = () => process.env.APP_URL ?? "http://localhost:3000";
 const compact = (iso: string) => iso.replaceAll("-", "");
 export const TZ = "America/New_York";
 

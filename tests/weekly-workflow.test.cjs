@@ -100,7 +100,7 @@ test("current week stays put on Saturday and Sunday, including year and DST boun
   assert.equal(dates.isISODate("2026-02-30"), false);
 });
 
-test("Sunday reminder and Monday follow-up target the same plan and stop after check-in", async () => {
+test("only Sunday reminds people to plan next week, and not once they have", async () => {
   for (const date of ["2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31"]) {
     for (const checked of [false, true]) {
       let queriedWeek;
@@ -111,7 +111,7 @@ test("Sunday reminder and Monday follow-up target the same plan and stop after c
       const digest = load("src/lib/digest.ts", { dbModule: { db }, "./email": {} }, `${date}T13:00:00Z`);
       const emails = await digest.buildDigests();
       assert.equal(queriedWeek, "2026-10-26");
-      const shouldRemind = !checked && ["2026-10-25", "2026-10-26"].includes(date);
+      const shouldRemind = !checked && date === "2026-10-25";
       assert.equal(emails.length, shouldRemind ? 1 : 0);
       if (shouldRemind) assert.match(emails[0].text, /checkin\?week=2026-10-26/);
     }
@@ -310,7 +310,7 @@ test("morning emails wait until someone has signed in, then skip pings from befo
   assert.equal([...emails[0].pingIds].sort().join(","), "new,old");
 });
 
-test("NetID addresses get a reminder to use the alias, unless a member is saved under one", async () => {
+test("unknown emails get told so (NetIDs get the alias reminder); members get a link", async () => {
   const f = fixture();
   f.state.member[0].email = "alex.a@duke.edu";
   f.state.member[1].email = "bb12@duke.edu";
@@ -332,5 +332,53 @@ test("NetID addresses get a reminder to use the alias, unless a member is saved 
   sentTo = null;
   await redirected(() => actions.requestLogin(form({ email: "alex.a@duke.edu" })), "/login?sent=1");
   assert.equal(sentTo, "alex.a@duke.edu");
-  await redirected(() => actions.requestLogin(form({ email: "someone.else@duke.edu" })), "/login?sent=1");
+  sentTo = null;
+  await redirected(() => actions.requestLogin(form({ email: "someone.else@duke.edu" })), "/login?error=unknown");
+  assert.equal(sentTo, null);
+});
+
+test("on Sunday the check-in page opens next week's plan; the ending week only when asked", async () => {
+  const React = require("react");
+  const f = fixture();
+  let shown;
+  const mocks = {
+    ...f.mocks,
+    "next/link": { default: ({ href, children }) => React.createElement("a", { href }, children) },
+    "@/components/shell": { PageHeader: ({ title }) => React.createElement("h1", null, title) },
+    "./CheckInForm": { default: (props) => { shown = props.week; return null; } },
+  };
+  f.db.project = { findMany: async () => [] };
+  const page = load("src/app/(hub)/checkin/page.tsx", mocks);
+  const render = async (query) => { const el = await page.default({ searchParams: Promise.resolve(query) }); require("react-dom/server").renderToStaticMarkup(el); return shown; };
+  assert.equal(await render({}), "2026-10-26");
+  assert.equal(await render({ from: "reminder" }), "2026-10-26");
+  assert.equal(await render({ week: "2026-10-19" }), "2026-10-19");
+  assert.equal(await render({ week: "2026-01-05" }), "2026-10-26");
+});
+
+test("on Sunday the This Week plan button opens next week's plan", async () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const f = fixture();
+  f.state.checkIn.push({ id: "c", memberId: "a", weekStart: "2026-10-19" });
+  const mocks = {
+    ...f.mocks,
+    "next/link": { default: ({ href, children, ...props }) => React.createElement("a", { href, className: props.className }, children) },
+    "@/components/bits": { Avatar: () => null, StatusText: () => null, withTask: () => "/" },
+    "@/components/TaskPanel": { default: () => null },
+    "@/components/shell": { PageHeader: ({ title, actions }) => React.createElement("header", null, title, actions) },
+    "@/components/icons": { Icon: () => null },
+    "@/components/MoreToggle": { default: () => null },
+  };
+  const page = load("src/app/(hub)/page.tsx", mocks);
+  const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
+  assert.doesNotMatch(html, /href="\/checkin\?week=2026-10-19"/);
+  assert.match(html, /<a href="\/checkin\?week=2026-10-26" class="button">Plan next week<\/a>/);
+});
+
+test("links never get a double slash when APP_URL ends with one", () => {
+  const code = ts.transpileModule(fs.readFileSync("src/lib/url.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports = {};
+  vm.runInNewContext(code, { exports, process: { env: { APP_URL: "https://hub.example.test/" } } });
+  assert.equal(`${exports.appUrl()}/checkin`, "https://hub.example.test/checkin");
 });

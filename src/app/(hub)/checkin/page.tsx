@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { requireMember } from "@/lib/auth";
-import { activeWeek, addDays, formatWeek, todayISO } from "@/lib/dates";
+import { activeWeek, addDays, formatWeek, planningWeek } from "@/lib/dates";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -16,9 +16,9 @@ export default async function CheckInPage({ searchParams }: { searchParams: Prom
   const current = activeWeek();
   const next = addDays(current, 7);
   const query = await searchParams;
-  // Old email links fall back to the current week; never edit arbitrary history.
-  const sundayReminder = query.from === "reminder" && new Date(`${todayISO()}T00:00:00Z`).getUTCDay() === 0;
-  const week = query.week === next || sundayReminder ? next : current;
+  // Opens on the week to plan (next week on Sundays). Only this week and next
+  // can be chosen; old links fall back to the planning week, never history.
+  const week = query.week === current || query.week === next ? query.week : planningWeek();
   const planningAhead = week === next;
   const lastWeek = addDays(week, -7);
 
@@ -50,7 +50,7 @@ export default async function CheckInPage({ searchParams }: { searchParams: Prom
         back={{ href: planningAhead ? `/?week=${week}` : "/", label: planningAhead ? "Next week's board" : "This Week" }}
       />
       <div className="row" style={{ marginBottom: 16 }}>
-        <Link href="/checkin" className={`button ${planningAhead ? "secondary" : ""}`}>This week</Link>
+        <Link href={`/checkin?week=${current}`} className={`button ${planningAhead ? "secondary" : ""}`}>{planningWeek() === current ? "This week" : "Week ending today"}</Link>
         <Link href={`/checkin?week=${next}`} className={`button ${planningAhead ? "" : "secondary"}`}>Plan next week</Link>
       </div>
       <p className="muted small">Choose what belongs on your card. Later keeps the task yours without putting it on this plan. Done finishes it everywhere.</p>

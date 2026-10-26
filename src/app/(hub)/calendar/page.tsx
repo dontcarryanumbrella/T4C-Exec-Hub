@@ -11,6 +11,7 @@ import { Menu } from "@/components/Menu";
 import TaskPanel from "@/components/TaskPanel";
 import { PageHeader } from "@/components/shell";
 import { resetCalendarToken } from "../../actions";
+import { appUrl } from "@/lib/url";
 
 export const metadata: Metadata = { title: "Calendar · T4C Exec Hub" };
 
@@ -82,7 +83,7 @@ export default async function CalendarPage({
       .filter((i) => i.date === d)
       .sort((a, b) => (a.time ?? "") .localeCompare(b.time ?? ""));
 
-  const base = process.env.APP_URL ?? "http://localhost:3000";
+  const base = appUrl();
   const feedUrl = me.calendarToken ? `${base}/calendar/feed/${me.calendarToken}.ics` : null;
   const googleSubscribe = feedUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl.replace(/^https?:/, "webcal:"))}` : null;
 

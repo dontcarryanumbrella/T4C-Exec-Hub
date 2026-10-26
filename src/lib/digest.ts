@@ -2,6 +2,7 @@ import { db } from "./db";
 import { sendEmail } from "./email";
 import { addDays, formatDay, planningWeek, todayISO } from "./dates";
 import { taskStatus } from "./status";
+import { appUrl } from "./url";
 
 const OPEN_TASKS_SHOWN = 8;
 
@@ -9,19 +10,17 @@ type Digest = { to: string; subject: string; text: string; pingIds: string[]; du
 
 // One morning email per person, covering everything since yesterday's:
 // tasks due tomorrow, new pings (assignments, @mentions, help offers,
-// decisions), a Sunday planning reminder or Monday follow-up, and open tasks. Nobody
-// gets an email that would only repeat yesterday's open-task list.
+// decisions), a Sunday reminder to plan the coming week, and open tasks.
+// Nobody gets an email that would only repeat yesterday's open-task list.
 // People who have never signed in get nothing until they do, so the first
 // hub email anyone sees is the sign-in link they asked for.
 export async function buildDigests(): Promise<Digest[]> {
-  const base = process.env.APP_URL ?? "http://localhost:3000";
+  const base = appUrl();
   const today = todayISO();
   const tomorrow = addDays(today, 1);
   // Use the hub's Eastern calendar date, not the server's local weekday.
-  // Sunday and Monday both refer to the same upcoming/current planning week.
-  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const sunday = new Date(`${today}T00:00:00Z`).getUTCDay() === 0;
   const week = planningWeek(today);
-  const checkInDay = weekday === 0 || weekday === 1;
   const members = await db.member.findMany({
     where: { joinedAt: { not: null } },
     include: {
@@ -41,7 +40,7 @@ export async function buildDigests(): Promise<Digest[]> {
     // Pings already read on the site don't need repeating, and pings from
     // before someone first signed in are left for the bell.
     const pings = m.notifications.filter((n) => !n.readAt && !(m.joinedAt && n.createdAt < m.joinedAt));
-    const needsCheckIn = checkInDay && m.kind === "exec" && m.checkIns.length === 0;
+    const needsCheckIn = sunday && m.kind === "exec" && m.checkIns.length === 0;
     const others = m.ownedTasks.filter((t) => t.due !== tomorrow);
     if (!due.length && !pings.length && !needsCheckIn) {
       // Still mark read pings as handled, so they never go out later.
@@ -57,12 +56,10 @@ export async function buildDigests(): Promise<Digest[]> {
           due.map((t) => `• ${t.title}${where(t)}${t.dueTime ? ` at ${t.dueTime}` : ""}\n  ${base}/?task=${t.id}`).join("\n"),
       );
     if (pings.length) sections.push(`NEW FOR YOU\n` + pings.map((p) => `• ${p.text}\n  ${base}${p.href}`).join("\n"));
-    if (needsCheckIn) {
-      const reminder = weekday === 0
-        ? "Plan your coming week: choose 1–3 outcomes, review unfinished work, and ask for any help you need. Check in today so the board can see your plan."
-        : "A quick follow-up: you haven't checked in for this week yet. Share your 1–3 planned outcomes, update unfinished work, and flag any help you need.";
-      sections.push(`WEEKLY CHECK-IN${weekday === 1 ? " FOLLOW-UP" : ""}\n${reminder}\n  ${base}/checkin?week=${week}`);
-    }
+    if (needsCheckIn)
+      sections.push(
+        `WEEKLY CHECK-IN\nPlan your coming week: choose 1–3 outcomes, review unfinished work, and ask for any help you need. Check in today so the board can see your plan.\n  ${base}/checkin?week=${week}`,
+      );
     if (others.length)
       sections.push(
         `YOUR OTHER OPEN TASKS\n` +
@@ -76,7 +73,7 @@ export async function buildDigests(): Promise<Digest[]> {
     const headline = [
       due.length && `${due.length} due tomorrow`,
       pings.length && `${pings.length} new`,
-      needsCheckIn && (weekday === 0 ? "plan your coming week" : "check-in follow-up"),
+      needsCheckIn && "plan your coming week",
     ].filter(Boolean);
     digests.push({
       to: m.email,

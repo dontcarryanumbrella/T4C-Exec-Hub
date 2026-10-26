@@ -75,7 +75,13 @@ export default async function ThisWeek({
   const checkInBy = new Map(checkIns.map((c) => [c.memberId, c]));
   const nextWeek = addDays(current, 7);
   const canPlan = week === current || week === nextWeek;
-  const planHref = `/checkin?week=${week}`;
+  // Viewing this week on a Sunday, "your plan" means next week's.
+  const planWeek = week === current ? planningWeek() : week;
+  const planHref = `/checkin?week=${planWeek}`;
+  const planned = planWeek === week ? checkInBy.has(me.id) : (await db.checkIn.count({ where: { memberId: me.id, weekStart: planWeek } })) > 0;
+  const planLabel = planned
+    ? planWeek === current ? "Edit your plan" : "Edit next week's plan"
+    : planWeek === current ? "Plan this week" : "Plan next week";
   const showGettingStarted = isExec && week === current && everCheckedIn === 0;
   const upForGrabs = openTasks.filter((t) => !t.ownerId).length;
   // One row per task. Urgent work comes first and is never cut off by a limit.
@@ -125,7 +131,7 @@ export default async function ThisWeek({
       )}
       {isExec && canPlan && !showGettingStarted && (
         <div className="row" style={{ margin: "12px 0" }}>
-          <Link href={planHref} className="button">{checkInBy.has(me.id) ? "Edit your plan" : week === current ? "Plan this week" : "Plan next week"}</Link>
+          <Link href={planHref} className="button">{planLabel}</Link>
           <span className="small muted">Your card is your plan. Other tasks stay in check-in until you choose them.</span>
         </div>
       )}
@@ -191,7 +197,7 @@ export default async function ThisWeek({
                 </ul>
               )}
               {isMe && canPlan && (
-                <Link href={planHref} className="card-edit small">{checkIn ? "Edit your plan" : "Review and check in"}</Link>
+                <Link href={planHref} className="card-edit small">{planLabel}</Link>
               )}
             </div>
           );

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./db";
 import { can, type Permission } from "./permissions";
+import { appUrl } from "./url";
 
 const SESSION_COOKIE = "hub_session";
 const SESSION_DAYS = 120; // stay signed in on your own device for the semester
@@ -25,7 +26,7 @@ export async function createLoginLink(memberId: string, minutesValid: number): P
       expiresAt: new Date(Date.now() + minutesValid * 60_000),
     },
   });
-  const base = process.env.APP_URL ?? "http://localhost:3000";
+  const base = appUrl();
   return `${base}/auth/verify?token=${token}`;
 }
 

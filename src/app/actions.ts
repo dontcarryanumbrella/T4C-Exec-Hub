@@ -200,10 +200,13 @@ export async function requestLogin(fd: FormData) {
   const email = str(fd, "email", 254).toLowerCase();
   if (isEmail(email) && (await ipAllowed())) {
     const member = await db.member.findUnique({ where: { email } });
-    // Point NetID addresses to the alias instead of silently sending nothing.
+    // Say plainly when an address isn't on file, instead of a "check your
+    // email" page for a link that never comes. This lets someone test whether
+    // an address belongs to a member, which is fine for a small board, and
+    // the per-IP limit above slows down anyone trying many addresses.
     // A member saved under their NetID still signs in normally.
-    if (!member && NETID_EMAIL.test(email)) redirect("/login?error=netid");
-    if (member && (await canSendLoginLink(member.id))) {
+    if (!member) redirect(NETID_EMAIL.test(email) ? "/login?error=netid" : "/login?error=unknown");
+    if (await canSendLoginLink(member.id)) {
       const link = await createLoginLink(member.id, LOGIN_LINK_MINUTES);
       await sendEmail(
         member.email,
@@ -212,7 +215,6 @@ export async function requestLogin(fd: FormData) {
       );
     }
   }
-  // Same response in every case, so the form never reveals who is a member.
   // No email in the URL: it would end up in browser history and logs.
   redirect("/login?sent=1");
 }
