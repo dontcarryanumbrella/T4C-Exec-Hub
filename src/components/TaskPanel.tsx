@@ -17,7 +17,7 @@ import {
   addLink,
   claimTask,
   deleteTask,
-  offerHelp,
+  joinTask,
   pingOwner,
   toggleThisWeek,
   removeLink,
@@ -67,7 +67,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
   const isOpen = task.status !== "done" && task.status !== "dropped";
   const openRequests = task.helpRequests.filter((r) => r.status === "open");
   const liveOffers = task.helpOffers.filter((o) => o.status !== "declined");
-  const myOffer = liveOffers.find((o) => o.helperId === me.id);
+
   const Back = () => <input type="hidden" name="back" value={back} />;
 
   // A task given to Everyone is one copy per person. Seen by someone else, it
@@ -223,17 +223,6 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             {onIt && !onMyWeek && <> You&apos;re still on it; add it above or choose it in <Link href="/checkin">your plan</Link>.</>}
           </p>
         )}
-        {canEdit && isOpen && (
-          <details className="offer" style={{ marginTop: 12 }}>
-            <summary className="button secondary">Ask for help</summary>
-            <form action={requestHelp} className="stack" style={{ marginTop: 8 }}>
-              <Back />
-              <input type="hidden" name="taskId" value={task.id} />
-              <MentionInput name="message" people={people} placeholder="What would help? @mention someone if you like" required maxLength={300} ariaLabel="What help you need" />
-              <button>Ask the board for help</button>
-            </form>
-          </details>
-        )}
         {canEdit && !isOpen && (
           <form action={setTaskStatus} style={{ marginTop: 10 }}>
             <Back />
@@ -250,18 +239,27 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             <button name="commit" value="no" className="secondary">Take it, plan later</button>
           </form>
         )}
-        {!isUpForGrabs && isOpen && ((!canEdit && !shared) || pingable.length > 0) && (
+        {/* People on the task ask for help; anyone else can join with I can help. Being able
+            to edit a task (as a manager) doesn't make it yours. */}
+        {!isUpForGrabs && isOpen && (onIt || !shared || pingable.length > 0) && (
           <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
-          {!canEdit && !shared && (
-          <details className="offer" open={!!myOffer || undefined}>
-            <summary className="button secondary">I can help</summary>
-            <form action={offerHelp} className="stack" style={{ marginTop: 8 }}>
+          {onIt && (
+            <details className="offer">
+              <summary className="button secondary">Ask for help</summary>
+              <form action={requestHelp} className="stack" style={{ marginTop: 8 }}>
+                <Back />
+                <input type="hidden" name="taskId" value={task.id} />
+                <MentionInput name="message" people={people} placeholder="What would help? @mention someone if you like" required maxLength={300} ariaLabel="What help you need" />
+                <button>Ask the board for help</button>
+              </form>
+            </details>
+          )}
+          {!onIt && !shared && (
+            <form action={joinTask}>
               <Back />
               <input type="hidden" name="taskId" value={task.id} />
-              <input type="text" name="contribution" defaultValue={myOffer?.contribution} placeholder="What will you do? e.g. Draft the email by Wed" required maxLength={300} aria-label="What you'll do" />
-              <button>{myOffer ? "Update offer" : "Send offer"}</button>
+              <button className="secondary" title="Adds you to this task alongside its owner">I can help</button>
             </form>
-          </details>
           )}
           {pingable.length > 0 && (
             <Menu

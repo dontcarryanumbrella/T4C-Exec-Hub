@@ -896,23 +896,19 @@ export async function resolveHelpRequest(fd: FormData) {
   done(fd);
 }
 
-export async function offerHelp(fd: FormData) {
+// "I can help": puts you on the task right away, next to its owner. No offer
+// to accept and no notification; the owner sees you on the task. The owner
+// stays the one responsible. Tasks with no owner are taken on instead.
+export async function joinTask(fd: FormData) {
   const me = await requireMember();
-  const contribution = str(fd, "contribution", LIMIT.line);
-  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") } });
-  // Open tasks have no owner to help; people take them on instead.
-  if (!task || !task.ownerId || task.ownerId === me.id || task.status === "done" || task.status === "dropped")
-    return refuse(fd, "That task isn't taking help offers right now.");
-  if (!contribution) return refuse(fd, "Say what you'll do, so the owner knows what to expect.");
-  // One live offer per person per task: offering again updates it.
-  const existing = await db.helpOffer.findFirst({ where: { taskId: task.id, helperId: me.id, status: { not: "declined" } } });
-  const offer = existing
-    ? await db.helpOffer.update({ where: { id: existing.id }, data: { contribution } })
-    : await db.helpOffer.create({ data: { taskId: task.id, helperId: me.id, contribution } });
-  const owner = await nameOf(task.ownerId);
-  if (!existing) await notify(task.ownerId, me.id, `${me.name} offered to help with “${task.title}”: ${contribution}`, `/?task=${task.id}`);
-  await tell(me, existing ? "Offer updated." : `Offer sent. ${owner} can accept it or let you know it's covered.`, {
-    undo: { kind: "offer", label: "that offer", payload: { id: offer.id, prevContribution: existing?.contribution ?? null } },
+  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") }, include: { coOwners: { select: { id: true } } } });
+  if (!task || !task.ownerId || task.status === "done" || task.status === "dropped")
+    return refuse(fd, "That task isn't open for help right now.");
+  if (isOnTask(task, me.id)) return refuse(fd, "You're already on this task.");
+  await db.task.update({ where: { id: task.id }, data: { coOwners: { connect: { id: me.id } } } });
+  const onCard = await joinWeek(me.id, task.id, task.due);
+  await tell(me, `You're helping with “${task.title}” now${onCard ? ", and it's on your card this week" : ""}.`, {
+    undo: { kind: "task.join", label: "joining that task", payload: { taskId: task.id } },
   });
   done(fd);
 }

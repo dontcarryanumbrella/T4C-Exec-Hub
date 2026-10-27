@@ -77,7 +77,7 @@ export default async function HubLayout({ children }: { children: React.ReactNod
             { target: '.side-nav a[href="/people"]', title: "People", text: "See what each exec is up to, who's online, and send a shoutout." },
             { target: ".side-nudge, .side-done", title: "Plan each week", text: "Choose This week, Later, or Done for your tasks. Aim for 1–3 outcomes; you can change your plan anytime." },
             { target: ".topbar .search", title: "Search anything", text: "Find tasks, folders, people, and meeting notes from one box." },
-            { target: ".topbar .bell", title: "Your pings", text: "Assignments, @mentions, and help offers show up here, and in your morning email." },
+            { target: ".topbar .bell", title: "Your pings", text: "Assignments, @mentions, and pings show up here, and in your morning email." },
             { target: ".side-guide", title: "Stuck? Open the Guide", text: "Short how-tos for everything, and you can replay this tour from there." },
           ]}
         />

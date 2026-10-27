@@ -16,7 +16,7 @@ function BellIcon() {
   );
 }
 
-// Your pings: @mentions, assignments, help offers, decisions on your ideas.
+// Your pings: @mentions, assignments, nudges, decisions on your ideas.
 // Opening the list marks them read.
 export default function Bell({ pings, unread }: { pings: Ping[]; unread: number }) {
   const router = useRouter();

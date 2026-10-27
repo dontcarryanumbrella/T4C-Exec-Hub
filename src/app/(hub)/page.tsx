@@ -22,7 +22,7 @@ const ATTENTION_LIMIT = 3;
 function CommitmentItem({ task, href, today }: { task: Parameters<typeof StatusText>[0]["task"] & { id: string; title: string; helpOffers: unknown[] }; href: string; today: string }) {
   return (
     <li>
-      <Link href={href}>
+      <Link href={href} scroll={false}>
         <div>{task.title}</div>
         <StatusText task={task} today={today} />
         {task.helpOffers.length > 0 && <span className="small muted"> · +{task.helpOffers.length} helping</span>}
@@ -76,7 +76,8 @@ export default async function ThisWeek({
   ]);
 
   // Tasks open inside their folder or project, with the task's panel showing.
-  const taskHome = (t: { id: string; projectId: string | null }) => (t.projectId ? `/projects/${t.projectId}?task=${t.id}` : link(t.id));
+  // Tasks open in the side panel right here; the panel links to their folder.
+  const taskHome = (t: { id: string }) => link(t.id);
   const checkInBy = new Map(checkIns.map((c) => [c.memberId, c]));
   const nextWeek = addDays(current, 7);
   const canPlan = week === current || week === nextWeek;
@@ -105,7 +106,7 @@ export default async function ThisWeek({
   }).filter((a) => a.visible).sort((a, b) => a.priority - b.priority);
 
   const attnRow = (a: (typeof rows)[number]) => (
-    <Link key={a.task.id} href={taskHome(a.task)} className="attn-row">
+    <Link key={a.task.id} href={taskHome(a.task)} scroll={false} className="attn-row">
       <span className={`chip${a.priority < 2 ? " warn" : ""}`}>{a.label}</span>
       <span className="attn-text">{a.task.title}<span className="small muted" style={{ display: "block" }}>{a.status.text}{a.task.helpRequests.length > 0 && ` · Help: ${a.task.helpRequests[0].message}`}</span></span>
       <span className="muted small">{a.who}</span>

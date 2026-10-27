@@ -52,9 +52,17 @@ function fixture() {
     return row[key] === value;
   });
   // Relation writes ({ connect } / { set }) become a plain list of { id }.
-  const relations = (data) => {
+  const list = (v) => (v === undefined ? [] : [].concat(v).map(({ id }) => ({ id })));
+  const relations = (data, row = {}) => {
     const out = { ...data };
-    if (out.coOwners) out.coOwners = (out.coOwners.set ?? out.coOwners.connect ?? []).map(({ id }) => ({ id }));
+    const c = out.coOwners;
+    if (c) {
+      if (c.set) out.coOwners = list(c.set);
+      else {
+        const gone = list(c.disconnect).map((x) => x.id);
+        out.coOwners = [...(row.coOwners ?? []).filter((x) => !gone.includes(x.id)), ...list(c.connect)];
+      }
+    }
     return out;
   };
   const db = {};
@@ -66,7 +74,7 @@ function fixture() {
       count: async ({ where = {} } = {}) => state[model].filter((r) => matches(r, where)).length,
       create: async ({ data }) => { const row = { id: `new-${++seq}`, ...(model === "undoEntry" ? { usedAt: null } : {}), ...(model === "task" ? { status: "todo", coOwners: [] } : {}), createdAt: new Date("2026-10-25T13:00:00Z"), ...relations(data) }; state[model].push(row); return structuredClone(row); },
       updateMany: async ({ where, data }) => { const rows = state[model].filter((r) => matches(r, where)); rows.forEach((r) => Object.assign(r, relations(data))); return { count: rows.length }; },
-      update: async ({ where, data }) => { const row = state[model].find((r) => matches(r, where)); if (!row) throw new Error("Record changed"); Object.assign(row, relations(data)); return structuredClone(row); },
+      update: async ({ where, data }) => { const row = state[model].find((r) => matches(r, where)); if (!row) throw new Error("Record changed"); Object.assign(row, relations(data, row)); return structuredClone(row); },
       deleteMany: async ({ where }) => { state[model] = state[model].filter((r) => !matches(r, where)); },
       upsert: async ({ where, update, create }) => (await table.findUnique({ where })) ? table.update({ where, data: update }) : table.create({ data: create }),
     };
@@ -458,4 +466,20 @@ test("ping picks people from every copy of an Everyone task; each ping opens the
   await redirected(() => f.actions.pingOwner(form({ taskId: "b-copy", toId: ["b"] })), "/");
   assert.equal(f.state.notification.length, 2);
   assert.match(f.notices.at(-1).text, /already pinged/);
+});
+
+test("I can help puts you on the task straight away, without telling the owner; Undo takes you off", async () => {
+  const f = fixture();
+  f.state.task.push(task("elaines", { ownerId: "b", due: "2026-10-24" }));
+  await redirected(() => f.actions.joinTask(form({ taskId: "elaines" })), "/");
+  assert.deepEqual(f.state.task[0].coOwners, [{ id: "a" }]);
+  assert.equal(f.state.task[0].ownerId, "b");
+  assert.equal(f.state.notification.length, 0);
+  assert.deepEqual(f.state.commitment.map((c) => c.memberId), ["a"]);
+  await redirected(() => f.actions.joinTask(form({ taskId: "elaines" })), "/");
+  assert.match(f.notices.at(-1).text, /already on this task/);
+  const undoId = f.state.undoEntry.at(-1).id;
+  await redirected(() => f.actions.undo(form({ undoId })), "/");
+  assert.deepEqual(f.state.task[0].coOwners, []);
+  assert.equal(f.state.commitment.length, 0);
 });

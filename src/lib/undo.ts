@@ -87,6 +87,13 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
         }
       });
       break;
+    case "task.join":
+      await db.$transaction(async (tx) => {
+        if (!(await tx.task.count({ where: { id: p.taskId } }))) return;
+        await tx.task.update({ where: { id: p.taskId }, data: { coOwners: { disconnect: { id: me.id } } } });
+        await tx.commitment.deleteMany({ where: { taskId: p.taskId, memberId: me.id, weekStart: { gte: activeWeek() } } });
+      });
+      break;
     case "task.claim":
       await db.$transaction(async (tx) => {
         const { count } = await tx.task.updateMany({ where: { id: p.taskId, ownerId: me.id }, data: { ownerId: null } });
