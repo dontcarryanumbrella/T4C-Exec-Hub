@@ -224,7 +224,7 @@ test("the board shows overdue and dependency-blocked work before more than six h
   };
   const page = load("src/app/(hub)/page.tsx", mocks);
   const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
-  assert.match(html, /Needs attention now · 10/);
+  assert.match(html, /Needs your attention · 10/);
   assert.ok(html.indexOf("Overdue room booking") < html.indexOf("help-0"));
   assert.ok(html.indexOf("Blocked publicity") < html.indexOf("help-0"));
   assert.match(html, /help-7/);
@@ -278,11 +278,12 @@ test("a task handed to someone else mid-edit is refused with a message, not an e
   assert.match(f.notices.at(-1).text, /changed who owns this task/);
 });
 
-test("the board shows a task given to Everyone once, with a count", async () => {
+test("Needs your attention only lists your own tasks, not other people's", async () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const f = fixture();
   for (const owner of f.state.member) f.state.task.push(task(`copy-${owner.id}`, { title: "Send availability", ownerId: owner.id, owner, due: "2026-10-28", waitingOn: null, helpRequests: [] }));
+  f.state.task.push(task("blairs", { title: "Book the room", ownerId: "b", owner: f.state.member[1], due: "2026-10-20", waitingOn: null, helpRequests: [] }));
   const mocks = {
     ...f.mocks,
     "next/link": { default: ({ href, children, ...props }) => React.createElement("a", { href, className: props.className }, children) },
@@ -294,9 +295,9 @@ test("the board shows a task given to Everyone once, with a count", async () => 
   };
   const page = load("src/app/(hub)/page.tsx", mocks);
   const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
-  assert.match(html, /Needs attention now · 1/);
+  assert.match(html, /Needs your attention · 1/);
   assert.equal(html.split("Send availability").length - 1, 1);
-  assert.match(html, /2 people, incl. you/);
+  assert.doesNotMatch(html, /Book the room/);
 });
 
 test("morning emails wait until someone has signed in, then skip pings from before", async () => {

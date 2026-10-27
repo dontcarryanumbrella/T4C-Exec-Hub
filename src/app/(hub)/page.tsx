@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
 import MoreToggle from "@/components/MoreToggle";
 import { taskStatus } from "@/lib/status";
-import { isOnTask } from "@/lib/tasks";
+import { isOnTask, peopleOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "This Week · T4C Exec Hub" };
 
@@ -66,9 +66,10 @@ export default async function ThisWeek({
       },
     }),
     db.checkIn.findMany({ where: { weekStart: week } }),
+    // Your open tasks, plus unowned ones so the "up for grabs" count is right.
     db.task.findMany({
-      where: { status: { notIn: ["done", "dropped"] } },
-      include: { owner: true, waitingOn: true, helpRequests: { where: { status: "open" } } },
+      where: { status: { notIn: ["done", "dropped"] }, OR: [{ ownerId: me.id }, { coOwners: { some: { id: me.id } } }, { ownerId: null }] },
+      include: { owner: true, coOwners: true, waitingOn: true, helpRequests: { where: { status: "open" } } },
       orderBy: [{ due: "asc" }, { createdAt: "asc" }],
     }),
     db.checkIn.count({ where: { memberId: me.id } }),
@@ -88,8 +89,9 @@ export default async function ThisWeek({
     : planWeek === current ? "Plan this week" : "Plan next week";
   const showGettingStarted = isExec && week === current && everCheckedIn === 0;
   const upForGrabs = openTasks.filter((t) => !t.ownerId).length;
-  // One row per task. Urgent work comes first and is never cut off by a limit.
-  const attention = openTasks.map((t) => {
+  // Only your own work: everyone else's is in "Who's doing what" below.
+  // Urgent work comes first.
+  const rows = openTasks.filter((t) => isOnTask(t, me.id)).map((t) => {
     const status = taskStatus(t, today);
     const overdue = !!t.due && t.due < today;
     const blocked = t.status === "blocked" || status.text.startsWith("Blocked");
@@ -97,20 +99,10 @@ export default async function ThisWeek({
     const upcoming = !!t.due && t.due <= addDays(today, 7);
     const priority = overdue || blocked ? 0 : help ? 1 : 2;
     const label = overdue ? "Overdue" : blocked ? "Blocked" : help ? "Help wanted" : t.due ? dueLabel(t.due, today) : "";
-    return { task: t, status, priority, label, visible: overdue || blocked || help || upcoming };
+    // Name the others only when you share it with someone.
+    const who = t.coOwners.length ? peopleOn(t, me.id) : "";
+    return { task: t, status, priority, label, who, visible: overdue || blocked || help || upcoming };
   }).filter((a) => a.visible).sort((a, b) => a.priority - b.priority);
-  // A task given to Everyone is one copy per person; show it once, with a count.
-  const grouped = new Map<string, (typeof attention)[number][]>();
-  for (const a of attention) {
-    const key = [a.task.title, a.task.projectId, a.task.due, a.label].join("|");
-    grouped.set(key, [...(grouped.get(key) ?? []), a]);
-  }
-  const rows = [...grouped.values()].map((copies) => {
-    const mine = copies.find((c) => c.task.ownerId === me.id);
-    const first = mine ?? copies[0];
-    const who = copies.length > 1 ? `${copies.length} people${mine ? ", incl. you" : ""}` : first.task.ownerId === me.id ? "you" : (first.task.owner?.name ?? "up for grabs");
-    return { ...first, who };
-  });
 
   const attnRow = (a: (typeof rows)[number]) => (
     <Link key={a.task.id} href={taskHome(a.task)} className="attn-row">
@@ -150,7 +142,7 @@ export default async function ThisWeek({
 
       {(rows.length > 0 || upForGrabs > 0) && (
         <>
-          <div className="section-title"><h2>Needs attention now · {rows.length}</h2></div>
+          <div className="section-title"><h2>Needs your attention · {rows.length}</h2></div>
           <div className="box" style={{ padding: "4px 14px" }}>
             {rows.slice(0, ATTENTION_LIMIT).map(attnRow)}
             {rows.length > ATTENTION_LIMIT && (
