@@ -57,7 +57,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
                 <div className="card-role">{m.role}{m.kind !== "exec" ? ` · ${m.kind}` : ""}</div>
               </div>
             </div>
-            {m.askMeAbout && <p className="small clamp" style={{ margin: 0 }}><span className="muted">Ask about</span> {m.askMeAbout}</p>}
+            {m.askMeAbout && <p className="small clamp-2" style={{ margin: 0 }} title={m.askMeAbout}><span className="muted">Ask about</span> {m.askMeAbout}</p>}
           </Link>
         ))}
       </div>

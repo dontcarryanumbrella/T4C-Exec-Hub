@@ -176,7 +176,7 @@ a.plain:hover { color: var(--brand); }
 .status.muted { color: var(--muted); }
 
 /* This Week */
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-height: 150px; display: flex; flex-direction: column; background: #fff;
   transition: border-color .15s, box-shadow .15s; }
 .card:hover { box-shadow: var(--shadow); }
@@ -192,7 +192,9 @@ a.plain:hover { color: var(--brand); }
 .commits a:hover { text-decoration: none; background: var(--brand-tint); }
 .person-card { display: block; color: inherit; transition: border-color .15s, box-shadow .15s; }
 .person-card:hover { text-decoration: none; border-color: #c3d0f5; box-shadow: var(--shadow); }
-.people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.people { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+/* Up to two lines, then an ellipsis, so one long answer can't stretch a card. */
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .add-task { margin-top: 12px; padding: 12px; border: 1px dashed #cfd8f2; border-radius: var(--radius); background: var(--brand-tint); }
 
 /* Side panel */
@@ -208,10 +210,10 @@ a.plain:hover { color: var(--brand); }
 
 
 @media (max-width: 900px) {
-  .cards, .people { grid-template-columns: repeat(2, 1fr); }
+  .cards, .people { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .cards, .people, .grid2 { grid-template-columns: 1fr; }
+  .cards, .people, .grid2 { grid-template-columns: minmax(0, 1fr); }
   .nav { gap: 2px 14px; padding: 8px 12px; position: static; }
   .page { padding: 14px 12px 40px; }
   .page.narrow { padding-top: 20px; }
