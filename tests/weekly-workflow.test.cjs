@@ -45,6 +45,7 @@ function fixture() {
       if (op === "gte") return row[key] >= v;
       if (op === "gt") return row[key] > v;
       if (op === "lt") return row[key] < v;
+      if (op === "lte") return row[key] <= v;
       if (op === "some") return (row[key] ?? []).some((r) => matches(r, v));
       throw new Error("Unhandled fixture operator: " + op);
     });
@@ -402,4 +403,39 @@ test("extra people on a task can plan it into their own week; the owner can't be
   f.state.member[0].canManageTasks = false;
   await redirected(() => f.actions.toggleThisWeek(form({ taskId: "shared" })), "/");
   assert.deepEqual(f.state.commitment.map((c) => c.memberId), ["a"]);
+});
+
+test("renaming an Everyone task can update every copy, and Undo puts them all back", async () => {
+  const f = fixture();
+  const at = new Date("2026-10-25T12:00:00Z");
+  f.state.task.push(
+    task("mine", { title: "feedback?", projectId: "p", createdAt: at }),
+    task("theirs", { title: "feedback?", projectId: "p", ownerId: "b", status: "done", createdAt: at }),
+    task("other", { title: "feedback?", projectId: "p", ownerId: "b", createdAt: new Date("2026-10-01T12:00:00Z") }),
+  );
+  f.state.member[0].canManageTasks = true;
+  await redirected(() => f.actions.updateTask(form({ taskId: "mine", ownerId: "a", title: "Site feedback", everyone: "yes" })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.title), ["Site feedback", "Site feedback", "feedback?"]);
+  assert.equal(f.state.task[1].status, "done");
+  assert.equal(f.state.task[1].ownerId, "b");
+  const undoId = f.state.undoEntry.at(-1).id;
+  await redirected(() => f.actions.undo(form({ undoId })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.title), ["feedback?", "feedback?", "feedback?"]);
+});
+
+test("deleting erases the task; only its owner or a manager can, and managers can erase every copy", async () => {
+  const f = fixture();
+  const at = new Date("2026-10-25T12:00:00Z");
+  f.state.task.push(
+    task("helping", { ownerId: "b", coOwners: [{ id: "a" }] }),
+    task("mine", { title: "feedback?", createdAt: at }),
+    task("theirs", { title: "feedback?", ownerId: "b", createdAt: at }),
+  );
+  await assert.rejects(() => f.actions.deleteTask(form({ taskId: "helping" })), /permission/);
+  await redirected(() => f.actions.deleteTask(form({ taskId: "mine", everyone: "yes" })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.id), ["helping", "theirs"]);
+  f.state.member[0].canManageTasks = true;
+  f.state.task.push(task("mine2", { title: "feedback?", createdAt: at }));
+  await redirected(() => f.actions.deleteTask(form({ taskId: "mine2", everyone: "yes" })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.id), ["helping"]);
 });

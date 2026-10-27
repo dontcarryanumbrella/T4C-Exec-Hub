@@ -30,7 +30,7 @@ import { xpFor, xpNote } from "@/lib/xp";
 import { AVATAR_COLORS, AVATAR_EXTRAS, AVATAR_FACES, AVATAR_SHAPES } from "@/lib/avatar";
 import { DEFAULT_FOLDER, isBuiltInFolder } from "@/lib/folders";
 import { joinWeek, moveCommitments, MAX_COMMITMENTS } from "@/lib/commitments";
-import { isOnTask, workingOn } from "@/lib/tasks";
+import { copiesOf, isOnTask, workingOn } from "@/lib/tasks";
 
 // Three commitments is the target that keeps priorities credible; people can
 // take on more when they choose to, up to a sanity cap.
@@ -631,8 +631,13 @@ export async function createTask(fd: FormData) {
 }
 
 export async function updateTask(fd: FormData) {
-  const { me, task, canEdit } = await taskForEdit(str(fd, "taskId"));
+  const { me, task, canEdit, manages } = await taskForEdit(str(fd, "taskId"));
   if (!canEdit) forbid();
+  // A task given to Everyone can be renamed or rescheduled for every copy at
+  // once. Each person keeps their own owner and status.
+  const copies = manages && task.ownerId && str(fd, "everyone") === "yes"
+    ? await db.task.findMany({ where: copiesOf(task), select: { id: true, title: true, description: true, due: true, dueTime: true } })
+    : [];
   const status = TASK_STATUSES.includes(str(fd, "status")) ? str(fd, "status") : task.status;
   const wanted = str(fd, "ownerId");
   // Owners can hand a task to someone or release it; both count as assigning.
@@ -662,6 +667,12 @@ export async function updateTask(fd: FormData) {
           completedAt: status === "done" ? (task.completedAt ?? new Date()) : null,
         },
       });
+      if (copies.length) {
+        await tx.task.updateMany({
+          where: { id: { in: copies.map((c) => c.id) } },
+          data: { title: str(fd, "title") || task.title, description: str(fd, "description", LIMIT.text), due, dueTime: optTime(fd, "dueTime") },
+        });
+      }
       const commitments = reassigned ? await moveCommitments(tx, task.id, ownerId) : undefined;
       const onCard = reassigned && status !== "done" && status !== "dropped"
         ? await joinWeek(ownerId, task.id, due, tx) : false;
@@ -683,9 +694,24 @@ export async function updateTask(fd: FormData) {
     ? ownerId ? ` ${ownerId === me.id ? "You own it now" : `${await nameOf(ownerId)} owns it now`}. ${cardPlacement(Number(result.onCard), 1)}`
       : " It's up for grabs now and off the previous owner's current and future cards."
     : "";
-  await tell(me, `Saved.${handed}`, {
-    undo: { kind: "task.fields", label: "those task changes", payload: { taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), prevCoOwners, commitments: result.commitments } },
+  const forAll = copies.length ? ` Everyone's copy (${copies.length + 1}) got the same name, description, and due date.` : "";
+  await tell(me, `Saved.${forAll}${handed}`, {
+    undo: { kind: "task.fields", label: "those task changes", payload: { taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), prevCoOwners, copies, commitments: result.commitments } },
   });
+  done(fd);
+}
+
+// Erases a task with its comments, links, and help. Only its owner or someone
+// who manages it can; others on the task can't delete it out from under them.
+// For a task given to Everyone, managers can erase every copy at once.
+export async function deleteTask(fd: FormData) {
+  const { me, task, manages } = await taskForEdit(str(fd, "taskId"));
+  if (task.ownerId !== me.id && !manages) forbid();
+  const copies = manages && task.ownerId && str(fd, "everyone") === "yes"
+    ? (await db.task.findMany({ where: copiesOf(task), select: { id: true } })).map((c) => c.id)
+    : [];
+  await db.task.deleteMany({ where: { id: { in: [task.id, ...copies] } } });
+  await tell(me, copies.length ? `Deleted “${task.title}” for everyone (${copies.length + 1} copies).` : `Deleted “${task.title}”.`, { tone: "info" });
   done(fd);
 }
 

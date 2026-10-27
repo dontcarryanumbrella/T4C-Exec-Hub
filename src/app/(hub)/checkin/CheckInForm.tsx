@@ -64,7 +64,7 @@ export default function CheckInForm(p: Props) {
                 <div className="stack" style={{ marginTop: 8 }}>
                   <label>Due date<input type="date" name={`date_${t.id}`} defaultValue={t.due ?? ""} /></label>
                   <label>Help needed (optional)<input type="text" name={`help_${t.id}`} maxLength={300} placeholder="What would help you move this forward?" /></label>
-                  <Link href={t.projectId ? `/projects/${t.projectId}?task=${t.id}` : `/?task=${t.id}`} className="small">Open task to edit its outcome, hand it off, or drop it (save this plan first).</Link>
+                  <Link href={t.projectId ? `/projects/${t.projectId}?task=${t.id}` : `/?task=${t.id}`} className="small">Open task to edit its outcome, hand it off, or delete it (save this plan first).</Link>
                 </div>
               </details>
             )}

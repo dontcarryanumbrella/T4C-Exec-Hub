@@ -4,10 +4,10 @@ import { activeWeek, addDays, formatDay, todayISO } from "@/lib/dates";
 import { dependents } from "@/lib/guards";
 import { can, type PermissionSet } from "@/lib/permissions";
 import { googleCalendarUrl } from "@/lib/calendar";
-import { isOnTask, pickable } from "@/lib/tasks";
+import { copiesOf, isOnTask, pickable } from "@/lib/tasks";
 import AssigneePicker from "./AssigneePicker";
 import { Assignees, CommentBody, StatusText } from "./bits";
-import { EscapeToClose } from "./client";
+import { ConfirmButton, EscapeToClose } from "./client";
 import { Icon } from "./icons";
 import { Menu } from "./Menu";
 import MentionInput from "./MentionInput";
@@ -15,6 +15,7 @@ import {
   addComment,
   addLink,
   claimTask,
+  deleteTask,
   offerHelp,
   pingOwner,
   toggleThisWeek,
@@ -60,6 +61,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
   const onIt = isOnTask(task, me.id);
   const canEdit = onIt || manages;
   const isOwner = task.ownerId === me.id;
+  const canDelete = isOwner || manages;
   const isUpForGrabs = !task.ownerId;
   const isOpen = task.status !== "done" && task.status !== "dropped";
   const openRequests = task.helpRequests.filter((r) => r.status === "open");
@@ -67,14 +69,15 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
   const myOffer = liveOffers.find((o) => o.helperId === me.id);
   const Back = () => <input type="hidden" name="back" value={back} />;
 
-  const [members, siblings] = canEdit
+  const [members, siblings, copyCount] = canEdit
     ? await Promise.all([
         db.member.findMany({ where: { kind: "exec" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
         task.projectId
           ? db.task.findMany({ where: { projectId: task.projectId }, select: { id: true, title: true, waitingOnId: true }, orderBy: { createdAt: "asc" } })
           : Promise.resolve([]),
+        manages && task.ownerId ? db.task.count({ where: copiesOf(task) }) : Promise.resolve(0),
       ])
-    : [[], []];
+    : [[], [], 0];
   // Tasks that already wait on this one can't be picked, or they'd form a loop.
   const loop = dependents(task.id, siblings);
   const waitable = siblings.filter((s) => s.id !== task.id && !loop.has(s.id));
@@ -105,7 +108,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             <span />
           )}
           <span className="row" style={{ gap: 2 }}>
-            {(gcal || (canEdit && isOpen)) && (
+            {(gcal || (canEdit && isOpen) || canDelete) && (
               <Menu label="More task actions">
                 {gcal && (
                   <a href={gcal} target="_blank" rel="noreferrer noopener" className="menu-item"><Icon name="calendar" /> Add to Google Calendar</a>
@@ -119,13 +122,28 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
                       <input type="text" name="blockedReason" defaultValue={task.blockedReason} placeholder="What's in the way?" maxLength={300} aria-label="Why it's blocked" />
                       <button className="secondary small">Mark blocked</button>
                     </form>
+                  </>
+                )}
+                {canDelete && (
+                  <>
                     <div className="menu-sep" />
-                    <form action={setTaskStatus}>
-                      <Back />
+                    <form action={deleteTask}>
+                      <input type="hidden" name="back" value={closeHref} />
                       <input type="hidden" name="taskId" value={task.id} />
-                      <input type="hidden" name="status" value="dropped" />
-                      <button className="menu-item danger"><Icon name="out" /> Drop this task</button>
+                      <ConfirmButton message={`Delete “${task.title}”? Its comments and links go too. This can't be undone.`} className="menu-item danger">
+                        <Icon name="trash" /> Delete task
+                      </ConfirmButton>
                     </form>
+                    {copyCount > 0 && (
+                      <form action={deleteTask}>
+                        <input type="hidden" name="back" value={closeHref} />
+                        <input type="hidden" name="taskId" value={task.id} />
+                        <input type="hidden" name="everyone" value="yes" />
+                        <ConfirmButton message={`Delete “${task.title}” for all ${copyCount + 1} people? This can't be undone.`} className="menu-item danger">
+                          <Icon name="trash" /> Delete for everyone ({copyCount + 1})
+                        </ConfirmButton>
+                      </form>
+                    )}
                   </>
                 )}
               </Menu>
@@ -314,6 +332,12 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
               <input type="hidden" name="blockedReason" value={task.blockedReason} />
               <label>Outcome<input type="text" name="title" defaultValue={task.title} maxLength={160} /></label>
               <label>Description<textarea name="description" defaultValue={task.description} maxLength={4000} placeholder="Details, context, links to look at" /></label>
+              {copyCount > 0 && (
+                <label className="inline small">
+                  <input type="checkbox" name="everyone" value="yes" defaultChecked />
+                  Change the name, description, and due date for everyone&apos;s copy ({copyCount + 1} people)
+                </label>
+              )}
               <div>
                 <span className="field-label">Assigned to</span>
                 <AssigneePicker people={pickable(members)} meId={me.id} initial={task.ownerId ? [task.ownerId, ...task.coOwners.map((c) => c.id)] : []} />

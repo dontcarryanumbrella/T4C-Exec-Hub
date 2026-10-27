@@ -49,6 +49,9 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
         });
         if (!count) return false; // A later handoff must not be overwritten.
         if (p.prevCoOwners) await tx.task.update({ where: { id: p.taskId }, data: { coOwners: { set: (p.prevCoOwners as string[]).map((id) => ({ id })) } } });
+        for (const { id, ...prev } of (p.copies ?? []) as { id: string; title: string; description: string; due: string | null; dueTime: string | null }[]) {
+          await tx.task.updateMany({ where: { id }, data: prev });
+        }
         if (p.commitments) {
           const week = activeWeek();
           await tx.commitment.deleteMany({ where: { taskId: p.taskId, weekStart: { gte: week } } });

@@ -8,6 +8,17 @@ export const workingOn = (memberId: string): Prisma.TaskWhereInput => ({
 export const isOnTask = (t: { ownerId: string | null; coOwners?: { id: string }[] }, memberId: string) =>
   t.ownerId === memberId || !!t.coOwners?.some((c) => c.id === memberId);
 
+// The other copies of a task given to Everyone: same name, folder and due
+// date, made in the same moment, each with its own owner.
+export const copiesOf = (t: { id: string; title: string; projectId: string | null; due: string | null; createdAt: Date }): Prisma.TaskWhereInput => ({
+  id: { not: t.id },
+  title: t.title,
+  projectId: t.projectId,
+  due: t.due,
+  ownerId: { not: null },
+  createdAt: { gte: new Date(t.createdAt.getTime() - 60_000), lte: new Date(t.createdAt.getTime() + 60_000) },
+});
+
 // "You + Sam, Priya" style label for a task's people.
 export function peopleOn(
   t: { ownerId: string | null; owner?: { name: string } | null; coOwners?: { id: string; name: string }[] },
