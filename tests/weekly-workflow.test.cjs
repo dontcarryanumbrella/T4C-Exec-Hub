@@ -104,7 +104,7 @@ function form(values) {
   return fd;
 }
 const redirected = (fn, href) => assert.rejects(fn, (e) => e.href === href);
-const task = (id, extra = {}) => ({ id, title: id, ownerId: "a", coOwners: [], status: "todo", projectId: null, due: null, completedAt: null, description: "", blockedReason: "", ...extra });
+const task = (id, extra = {}) => ({ id, title: id, ownerId: "a", coOwners: [], createdAt: new Date("2026-10-01T12:00:00Z"), status: "todo", projectId: null, due: null, completedAt: null, description: "", blockedReason: "", ...extra });
 const commitment = (memberId, weekStart, taskId = "work") => ({ id: `${memberId}-${weekStart}-${taskId}`, memberId, weekStart, taskId });
 
 test("current week stays put on Saturday and Sunday, including year and DST boundaries", () => {
@@ -482,4 +482,24 @@ test("I can help puts you on the task straight away, without telling the owner; 
   await redirected(() => f.actions.undo(form({ undoId })), "/");
   assert.deepEqual(f.state.task[0].coOwners, []);
   assert.equal(f.state.commitment.length, 0);
+});
+
+test("editing an Everyone task to specific people keeps one copy each and removes the rest", async () => {
+  const f = fixture();
+  f.state.member.push({ id: "c", name: "Casey", kind: "exec" }, { id: "d", name: "Dana", kind: "exec" });
+  const at = new Date("2026-10-25T12:00:00Z");
+  f.state.task.push(
+    task("a-copy", { title: "Chats", ownerId: "a", createdAt: at }),
+    task("b-copy", { title: "Chats", ownerId: "b", status: "done", createdAt: at }),
+    task("c-copy", { title: "Chats", ownerId: "c", createdAt: at }),
+  );
+  f.state.member[0].canManageTasks = true;
+  // Edit my copy, pick Blair and Dana: mine goes to Dana, Casey's is removed, Blair keeps theirs (still done).
+  await redirected(() => f.actions.updateTask(form({ taskId: "a-copy", ownerId: "b", coOwnerId: ["d"], title: "Chat times" })), "/");
+  const left = f.state.task.map((t) => [t.id, t.ownerId, t.title, t.status, t.coOwners.length]);
+  assert.deepEqual(left, [["a-copy", "d", "Chat times", "todo", 0], ["b-copy", "b", "Chat times", "done", 0]]);
+  assert.match(f.notices.at(-1).text, /2 people have it now; removed 1 copy/);
+  // Down to one person whose copy isn't the one being edited: the edited copy goes.
+  await redirected(() => f.actions.updateTask(form({ taskId: "a-copy", ownerId: "b", title: "Chat times" })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.id), ["b-copy"]);
 });

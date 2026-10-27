@@ -27,7 +27,29 @@ export const copiesOf = (t: { id: string; title: string; projectId: string | nul
   createdAt: { gte: new Date(t.createdAt.getTime() - 60_000), lte: new Date(t.createdAt.getTime() + 60_000) },
 });
 
-// "You + Sam, Priya" style label for a task's people.
+// Lists show a task given to Everyone once, not once per person: copies have
+// the same name, folder, and due date and were made within a minute.
+// The row opens your own copy when you have one.
+type Groupable = { id: string; title: string; projectId: string | null; due: string | null; ownerId: string | null; createdAt: Date };
+export function groupCopies<T extends Groupable>(tasks: T[], meId: string): { task: T; copies: T[] }[] {
+  const groups: T[][] = [];
+  for (const t of tasks) {
+    const group = t.ownerId
+      ? groups.find(([f]) =>
+          !!f.ownerId && f.title === t.title && f.projectId === t.projectId && f.due === t.due &&
+          Math.abs(f.createdAt.getTime() - t.createdAt.getTime()) <= 60_000)
+      : undefined;
+    if (group) group.push(t);
+    else groups.push([t]);
+  }
+  return groups.map((copies) => ({ task: copies.find((c) => c.ownerId === meId) ?? copies[0], copies }));
+}
+
+// "Everyone" while every exec has a copy, otherwise how many people do.
+export const copiesLabel = (n: number, execs: number) => (n >= execs ? "Everyone" : `${n} people`);
+
+// "You + Sam, Priya" style label for a task's people; past two others it
+// says how many, so long lists don't get cut off mid-name.
 export function peopleOn(
   t: { ownerId: string | null; owner?: { name: string } | null; coOwners?: { id: string; name: string }[] },
   meId: string,
@@ -36,6 +58,7 @@ export function peopleOn(
   if (!t.ownerId) return unowned;
   const lead = t.ownerId === meId ? "You" : (t.owner?.name ?? "Someone");
   const others = (t.coOwners ?? []).filter((c) => c.id !== t.ownerId).map((c) => (c.id === meId ? "you" : c.name));
+  if (others.length > 2) return `${lead} + ${others.length} others`;
   return others.length ? `${lead} + ${others.join(", ")}` : lead;
 }
 

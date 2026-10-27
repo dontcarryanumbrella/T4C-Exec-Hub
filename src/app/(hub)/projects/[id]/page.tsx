@@ -7,7 +7,7 @@ import { formatDay, todayISO } from "@/lib/dates";
 import { projectBrief } from "@/lib/status";
 import { can } from "@/lib/permissions";
 import AssigneePicker from "@/components/AssigneePicker";
-import { leadsProject, pickable } from "@/lib/tasks";
+import { copiesLabel, groupCopies, leadsProject, pickable } from "@/lib/tasks";
 import { Assignees } from "@/components/bits";
 import { AvatarStack } from "@/components/AvatarStack";
 import { isBuiltInFolder } from "@/lib/folders";
@@ -74,19 +74,7 @@ export default async function ProjectPage({
   const back = link(query.task ?? null);
   const finished = (s: string) => s === "done" || s === "dropped";
   const brief = projectBrief(project.tasks, today);
-  // A task given to Everyone is one copy per person; list it once.
-  const groups = new Map<string, typeof project.tasks>();
-  for (const t of project.tasks) {
-    const key = [t.title, t.due, t.ownerId ? "owned" : "open"].join("|");
-    groups.set(key, [...(groups.get(key) ?? []), t]);
-  }
-  const rows = [...groups.values()]
-    .flatMap((copies) => {
-      const owners = new Set(copies.map((c) => c.ownerId));
-      // Same-named tasks that aren't per-person copies stay separate rows.
-      if (copies.length < 2 || owners.size !== copies.length) return copies.map((t) => ({ task: t, copies: [t] }));
-      return [{ task: copies.find((c) => c.ownerId === me.id) ?? copies[0], copies }];
-    })
+  const rows = groupCopies(project.tasks, me.id)
     .map((r) => ({ ...r, finished: r.copies.every((c) => finished(c.status)) }))
     .sort((a, b) => Number(a.finished) - Number(b.finished));
   const tasks = project.tasks;
@@ -232,7 +220,7 @@ export default async function ProjectPage({
                   {shared ? (
                     <span className="assignees">
                       <AvatarStack people={copies.flatMap((c) => (c.owner ? [c.owner] : []))} size={22} max={4} />
-                      <span>{copies.length >= execs.length ? "Everyone" : `${copies.length} people`}</span>
+                      <span>{copiesLabel(copies.length, execs.length)}</span>
                     </span>
                   ) : t.owner ? (
                     <Assignees task={t} meId={me.id} />
@@ -274,7 +262,7 @@ export default async function ProjectPage({
                   Can&apos;t start until
                   <select name="waitingOnId" defaultValue="">
                     <option value="">Nothing</option>
-                    {project.tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                    {rows.map(({ task: t }) => <option key={t.id} value={t.id}>{t.title}</option>)}
                   </select>
                 </label>
               )}

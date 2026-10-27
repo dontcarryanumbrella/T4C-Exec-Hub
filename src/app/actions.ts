@@ -586,6 +586,11 @@ export async function updateTask(fd: FormData) {
   if (!canEdit) forbid();
   const status = TASK_STATUSES.includes(str(fd, "status")) ? str(fd, "status") : task.status;
   const wanted = str(fd, "ownerId");
+  // A task given to Everyone, edited to specific people, changes who has a copy.
+  if (manages && wanted !== EVERYONE) {
+    const others = await db.task.findMany({ where: copiesOf(task), select: { id: true, ownerId: true } });
+    if (others.length) return regroupCopies(fd, me, task, others, wanted);
+  }
   // Saved as Everyone (managers only): every copy gets the new name,
   // description, and dates, and any exec without a copy gets one. Each person
   // keeps their own status. An unowned task becomes the saver's copy.
@@ -672,6 +677,70 @@ export async function updateTask(fd: FormData) {
       },
     },
   });
+  done(fd);
+}
+
+// Editing a task given to Everyone down to specific people: each person picked
+// keeps their own copy (or gets one), everyone else's copy is removed, and
+// every remaining copy gets the new name and dates. Each keeps its own status.
+// Picking nobody leaves one copy, up for grabs.
+async function regroupCopies(
+  fd: FormData,
+  me: { id: string; name: string },
+  task: { id: string; ownerId: string | null; title: string; projectId: string | null; meetingId: string | null; createdAt: Date },
+  others: { id: string; ownerId: string | null }[],
+  wanted: string,
+) {
+  const asked = wanted === OPEN ? [] : [...new Set([wanted, ...fd.getAll("coOwnerId").map(String)])];
+  const execs = new Set((await db.member.findMany({ where: { id: { in: asked }, kind: "exec" }, select: { id: true } })).map((m) => m.id));
+  const picked = asked.filter((id) => execs.has(id));
+  const keep = new Map<string, string>(); // person -> their copy
+  const drop: string[] = [];
+  for (const t of [task, ...others]) {
+    if (t.ownerId && picked.includes(t.ownerId) && !keep.has(t.ownerId)) keep.set(t.ownerId, t.id);
+    else drop.push(t.id);
+  }
+  const missing = picked.filter((id) => !keep.has(id));
+  // Reuse the copy being edited for someone who needs one (or as the open
+  // task) rather than deleting it, so its comments and links stay.
+  let reassign: string | null | undefined;
+  if (drop.includes(task.id) && (missing.length || !picked.length)) {
+    reassign = missing.shift() ?? null;
+    drop.splice(drop.indexOf(task.id), 1);
+    if (reassign) keep.set(reassign, task.id);
+  }
+  const shared = { title: str(fd, "title") || task.title, description: str(fd, "description", LIMIT.text), due: optDate(fd, "due"), dueTime: optTime(fd, "dueTime") };
+  const kept = [...keep.values(), ...(reassign === null ? [task.id] : [])];
+  const created = await db.$transaction(async (tx) => {
+    if (reassign !== undefined) {
+      await tx.task.update({ where: { id: task.id }, data: { ownerId: reassign, assignedById: reassign && reassign !== me.id ? me.id : null } });
+      await moveCommitments(tx, task.id, reassign);
+    }
+    await tx.task.updateMany({ where: { id: { in: kept } }, data: shared });
+    // Copies are one person each; clear anyone added to them.
+    for (const id of kept) await tx.task.update({ where: { id }, data: { coOwners: { set: [] } } });
+    if (drop.length) await tx.task.deleteMany({ where: { id: { in: drop } } });
+    const made: [string, string][] = [];
+    for (const id of missing) {
+      const copy = await tx.task.create({
+        data: { ...shared, projectId: task.projectId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
+      });
+      made.push([id, copy.id]);
+      await joinWeek(id, copy.id, shared.due, tx);
+    }
+    return made;
+  });
+  for (const [id, copyId] of [...created, ...(reassign ? [[reassign, task.id] as [string, string]] : [])]) {
+    if (id !== me.id) await notify(id, me.id, `${me.name} gave you “${shared.title}”.`, `/?task=${copyId}`);
+  }
+  const people = keep.size;
+  await tell(
+    me,
+    `Saved. ${people ? `${people} ${people === 1 ? "person has" : "people have"} it now` : "It's up for grabs now"}` +
+      `${drop.length ? `; removed ${drop.length} ${drop.length === 1 ? "copy" : "copies"} from people you left out` : ""}.`,
+  );
+  // The edited copy may be gone; don't reopen it.
+  if (drop.includes(task.id)) fd.set("back", str(fd, "back", 500).replace(/([?&])task=[^&]*(&|$)/, "$1").replace(/[?&]$/, ""));
   done(fd);
 }
 

@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/shell";
 import { Avatar, StatusText, withTask } from "@/components/bits";
 import { Icon } from "@/components/icons";
 import TaskPanel from "@/components/TaskPanel";
-import { peopleOn } from "@/lib/tasks";
+import { copiesLabel, groupCopies, peopleOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "Search · T4C Exec Hub" };
 
@@ -20,7 +20,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const link = (taskId: string | null) => withTask("/search", { q }, taskId);
 
   const has = (field: string) => ({ [field]: { contains: q } });
-  const [tasks, projects, people, meetings] = q
+  const [found, projects, people, meetings, execCount] = q
     ? await Promise.all([
         db.task.findMany({
           where: { title: { contains: q }, status: { not: "dropped" } },
@@ -31,8 +31,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         db.project.findMany({ where: { OR: [has("title"), has("goal")], status: { not: "declined" } }, include: { owner: true }, take: 10 }),
         db.member.findMany({ where: { OR: [has("name"), has("role"), has("askMeAbout"), has("wantToLearn")] }, take: 10 }),
         db.meeting.findMany({ where: { OR: [has("title"), has("notes"), has("decisions")] }, orderBy: { date: "desc" }, take: 10 }),
+        db.member.count({ where: { kind: "exec" } }),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], 0];
+  // A task given to Everyone shows once, not once per person.
+  const tasks = groupCopies(found, me.id);
   const total = tasks.length + projects.length + people.length + meetings.length;
 
   return (
@@ -64,11 +67,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         <>
           <div className="section-title"><h2>Tasks</h2></div>
           <div className="list">
-            {tasks.map((t) => (
+            {tasks.map(({ task: t, copies }) => (
               <Link key={t.id} href={link(t.id)} scroll={false} className="list-row cols-search">
                 <span className="name"><Icon name={t.status === "done" ? "check" : "circle"} /><span>{t.title}</span></span>
                 <span className="cell">
-                  <StatusText task={t} today={today} short /> · {peopleOn(t, me.id)}
+                  {copies.length > 1 ? (
+                    <>{copiesLabel(copies.length, execCount)} · {copies.filter((c) => c.status === "done").length} of {copies.length} done</>
+                  ) : (
+                    <><StatusText task={t} today={today} short /> · {peopleOn(t, me.id)}</>
+                  )}
                   {t.project && ` · ${t.project.title}`}
                 </span>
               </Link>

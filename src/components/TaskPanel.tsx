@@ -96,7 +96,8 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
     : [[], []];
   // Tasks that already wait on this one can't be picked, or they'd form a loop.
   const loop = dependents(task.id, siblings);
-  const waitable = siblings.filter((s) => s.id !== task.id && !loop.has(s.id));
+  // One entry per title, so a task given to Everyone isn't listed once per person.
+  const waitable = siblings.filter((s, i) => s.id !== task.id && !loop.has(s.id) && siblings.findIndex((o) => o.title === s.title) === i);
   const gcal =
     task.due && isOpen
       ? googleCalendarUrl({ title: task.title, date: task.due, time: task.dueTime, details: [task.description, task.project?.title].filter(Boolean).join("\n\n"), path: `/?task=${task.id}` })
@@ -391,7 +392,9 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
                   initialEveryone={manages && shared}
                 />
                 {manages && shared && (
-                  <p className="small muted" style={{ margin: "4px 0 0" }}>Saving as Everyone updates every copy; each person keeps their own progress.</p>
+                  <p className="small muted" style={{ margin: "4px 0 0" }}>
+                    Everyone updates every copy. Picking people instead keeps a copy for each of them and removes the others&apos; copies. Each person keeps their own progress.
+                  </p>
                 )}
               </div>
               <div className="grid2">

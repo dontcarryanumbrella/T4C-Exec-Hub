@@ -11,7 +11,7 @@ import { Assignees, StatusText, withTask } from "@/components/bits";
 import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import AssigneePicker from "@/components/AssigneePicker";
-import { pickable } from "@/lib/tasks";
+import { copiesLabel, groupCopies, pickable } from "@/lib/tasks";
 import { ConfirmButton } from "@/components/client";
 import TaskPanel from "@/components/TaskPanel";
 import MentionInput from "@/components/MentionInput";
@@ -46,12 +46,14 @@ async function boardAgenda(today: string) {
     return text.startsWith("Blocked") || text.startsWith("Overdue");
   });
   const stuckIds = new Set(stuck.map((t) => t.id));
+  // Lists below show a task given to Everyone once.
+  const stuckRows = groupCopies(stuck, "");
   // Dated work first, soonest at the top; undated work after.
   const inFolders = open
     .filter((t) => t.project?.kind === "folder" && !stuckIds.has(t.id))
     .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
   const upForGrabs = open.filter((t) => !t.ownerId);
-  return { stuck, requests, proposals, deadlines, inFolders, upForGrabs, checkIns, members };
+  return { stuck: stuckRows, requests, proposals, deadlines, inFolders: groupCopies(inFolders, ""), upForGrabs, checkIns, members };
 }
 
 export default async function MeetingPage({
@@ -89,6 +91,11 @@ export default async function MeetingPage({
       ])
     : [[], []];
   const who = (o: { name: string } | null, ownerId: string | null) => (ownerId === me.id ? "you" : (o?.name ?? "up for grabs"));
+  const execCount = agenda?.members ?? (await db.member.count({ where: { kind: "exec" } }));
+  // A row's people: one person, or how many share a task given to Everyone.
+  const whoRow = (r: { task: { owner: { name: string } | null; ownerId: string | null }; copies: unknown[] }) =>
+    r.copies.length > 1 ? copiesLabel(r.copies.length, execCount) : who(r.task.owner, r.task.ownerId);
+  const actionItems = groupCopies(meeting.tasks, me.id);
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -142,9 +149,9 @@ export default async function MeetingPage({
           <div className="grid2">
             <div>
               <h3>Stuck or overdue</h3>
-              {agenda.stuck.length === 0 ? <p className="small muted">Nothing stuck.</p> : agenda.stuck.slice(0, 8).map((t) => (
-                <p key={t.id} className="small">
-                  <Link href={boardLink(t.id)} scroll={false}>{t.title}</Link> · {who(t.owner, t.ownerId)} · <StatusText task={t} today={today} />
+              {agenda.stuck.length === 0 ? <p className="small muted">Nothing stuck.</p> : agenda.stuck.slice(0, 8).map((r) => (
+                <p key={r.task.id} className="small">
+                  <Link href={boardLink(r.task.id)} scroll={false}>{r.task.title}</Link> · {whoRow(r)} · <StatusText task={r.task} today={today} />
                 </p>
               ))}
               <h3 style={{ marginTop: 10 }}>Asking for help</h3>
@@ -173,10 +180,10 @@ export default async function MeetingPage({
           <h3 style={{ marginTop: 10 }}>In the General folders</h3>
           {agenda.inFolders.length === 0 ? <p className="small muted">No open tasks in the General folders.</p> : (
             <>
-              {agenda.inFolders.slice(0, 8).map((t) => (
-                <p key={t.id} className="small">
-                  {t.due && <><strong>{formatDay(t.due)}</strong> · </>}
-                  <Link href={boardLink(t.id)} scroll={false}>{t.title}</Link> · {t.project?.title} · {who(t.owner, t.ownerId)}
+              {agenda.inFolders.slice(0, 8).map((r) => (
+                <p key={r.task.id} className="small">
+                  {r.task.due && <><strong>{formatDay(r.task.due)}</strong> · </>}
+                  <Link href={boardLink(r.task.id)} scroll={false}>{r.task.title}</Link> · {r.task.project?.title} · {whoRow(r)}
                 </p>
               ))}
               {agenda.inFolders.length > 8 && <p className="small muted">…and {agenda.inFolders.length - 8} more in the folders.</p>}
@@ -186,18 +193,22 @@ export default async function MeetingPage({
       )}
 
       <h2 style={{ marginTop: 22 }}>Action items</h2>
-      {meeting.tasks.length > 0 && (
+      {actionItems.length > 0 && (
         <table>
           <thead>
             <tr><th>Outcome</th><th>Owner</th><th>Due</th><th>Status</th></tr>
           </thead>
           <tbody>
-            {meeting.tasks.map((t) => (
+            {actionItems.map(({ task: t, copies }) => (
               <tr key={t.id}>
                 <td><Link href={link(t.id)} scroll={false}>{t.title}</Link></td>
-                <td><Assignees task={t} meId={me.id} /></td>
+                <td>{copies.length > 1 ? copiesLabel(copies.length, execCount) : <Assignees task={t} meId={me.id} />}</td>
                 <td>{t.due ? formatDay(t.due) : "—"}</td>
-                <td><StatusText task={t} today={today} noDue /></td>
+                <td>
+                  {copies.length > 1
+                    ? `${copies.filter((c) => c.status === "done").length} of ${copies.length} done`
+                    : <StatusText task={t} today={today} noDue />}
+                </td>
               </tr>
             ))}
           </tbody>
