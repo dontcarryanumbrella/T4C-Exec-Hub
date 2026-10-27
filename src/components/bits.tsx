@@ -2,6 +2,21 @@ import { shortStatus, taskStatus } from "@/lib/status";
 import type { AvatarLook } from "@/lib/avatar";
 import { AvatarArt } from "./AvatarArt";
 import { isOnline, presenceText } from "@/lib/presence";
+import { peopleOn } from "@/lib/tasks";
+import { AvatarStack } from "./AvatarStack";
+
+type Face = { id: string; name: string } & AvatarLook;
+
+// Faces plus names for the people on a task: "You + Sam, Priya".
+export function Assignees({ task, meId, size = 22 }: { task: { ownerId: string | null; owner: Face | null; coOwners: Face[] }; meId: string; size?: number }) {
+  if (!task.owner) return <span className="muted">Up for grabs</span>;
+  return (
+    <span className="assignees">
+      <AvatarStack people={[task.owner, ...task.coOwners.filter((c) => c.id !== task.ownerId)]} size={size} max={4} />
+      <span>{peopleOn(task, meId)}</span>
+    </span>
+  );
+}
 
 // Pass the member (or anything with their avatar fields) as `look` to show
 // the avatar they picked; without it you get their initials on blue.

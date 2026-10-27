@@ -51,9 +51,14 @@ export default function Sidebar(p: Props) {
           </Link>
         )}
         {p.canCreate && (
-          <Link href="/projects/new" className="menu-item">
-            <Icon name="folder" /> Project folder
-          </Link>
+          <>
+            <Link href="/projects/new" className="menu-item">
+              <Icon name="flag" /> Project (has an end date)
+            </Link>
+            <Link href="/projects/new?kind=folder" className="menu-item">
+              <Icon name="folder" /> General folder
+            </Link>
+          </>
         )}
         {p.canPropose && (
           <Link href="/projects/new?idea=1" className="menu-item">

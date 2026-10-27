@@ -6,6 +6,11 @@ import { requireMember } from "@/lib/auth";
 import { formatDay, todayISO } from "@/lib/dates";
 import { projectBrief } from "@/lib/status";
 import { can } from "@/lib/permissions";
+import AssigneePicker from "@/components/AssigneePicker";
+import { pickable } from "@/lib/tasks";
+import { Assignees } from "@/components/bits";
+import { AvatarStack } from "@/components/AvatarStack";
+import { isBuiltInFolder } from "@/lib/folders";
 import { CommentBody, StatusText, withTask } from "@/components/bits";
 import TaskPanel from "@/components/TaskPanel";
 import { ConfirmButton } from "@/components/client";
@@ -21,7 +26,6 @@ import {
   declineProposal,
   deleteProject,
   removeLink,
-  saveProjectAsTemplate,
   updateProject,
 } from "../../../actions";
 
@@ -35,7 +39,7 @@ export default async function ProjectPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ task?: string; edit?: string; template?: string }>;
+  searchParams: Promise<{ task?: string; edit?: string }>;
 }) {
   const me = await requireMember();
   const { id } = await params;
@@ -49,7 +53,7 @@ export default async function ProjectPage({
     include: {
       owner: true,
       proposedBy: true,
-      tasks: { include: { owner: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
+      tasks: { include: { owner: true, coOwners: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
       links: { orderBy: { createdAt: "asc" } },
       comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
     },
@@ -64,11 +68,26 @@ export default async function ProjectPage({
   const manages = can(me, "canManageTasks") || project.ownerId === me.id;
   const canEdit = (manages || can(me, "canCreateProjects")) && (project.status === "active" || project.status === "done");
   const canDelete =
-    !isFolder && (project.ownerId === me.id || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id));
+    !isBuiltInFolder(project) && (project.ownerId === me.id || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id));
   const back = link(query.task ?? null);
   const finished = (s: string) => s === "done" || s === "dropped";
   const brief = projectBrief(project.tasks, today);
-  const tasks = [...project.tasks].sort((a, b) => Number(finished(a.status)) - Number(finished(b.status)));
+  // A task given to Everyone is one copy per person; list it once.
+  const groups = new Map<string, typeof project.tasks>();
+  for (const t of project.tasks) {
+    const key = [t.title, t.due, t.ownerId ? "owned" : "open"].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+  const rows = [...groups.values()]
+    .flatMap((copies) => {
+      const owners = new Set(copies.map((c) => c.ownerId));
+      // Same-named tasks that aren't per-person copies stay separate rows.
+      if (copies.length < 2 || owners.size !== copies.length) return copies.map((t) => ({ task: t, copies: [t] }));
+      return [{ task: copies.find((c) => c.ownerId === me.id) ?? copies[0], copies }];
+    })
+    .map((r) => ({ ...r, finished: r.copies.every((c) => finished(c.status)) }))
+    .sort((a, b) => Number(a.finished) - Number(b.finished));
+  const tasks = project.tasks;
   // Hidden fields that keep the rest of the project as it is when only one thing changes.
   const Keep = () => (
     <>
@@ -88,14 +107,14 @@ export default async function ProjectPage({
         back={{ href: "/projects", label: "Folders" }}
         sub={
           <>
-            {isFolder ? "Folder" : ({ proposed: "Idea", done: "Done", declined: "Not now" }[project.status] ?? "Active")}
+            {isFolder ? "General folder" : ({ proposed: "Idea", done: "Done", declined: "Not now" }[project.status] ?? "Active")}
             {project.owner && ` · ${project.ownerId === me.id ? "You own this" : project.owner.name}`}
             {project.due && ` · Due ${formatDay(project.due)}`}
             {project.proposedBy && ` · Idea by ${project.proposedBy.id === me.id ? "you" : project.proposedBy.name}`}
           </>
         }
         actions={
-          (canEdit || canDelete || can(me, "canManageTemplates")) && (
+          (canEdit || canDelete) && (
             <Menu label="Project actions">
               {canEdit && (
                 <Link href={`${path}?edit=1`} className="menu-item"><Icon name="notes" /> Edit details</Link>
@@ -113,9 +132,6 @@ export default async function ProjectPage({
                   <input type="hidden" name="status" value="active" />
                   <button className="menu-item"><Icon name="left" /> Reopen project</button>
                 </form>
-              )}
-              {can(me, "canManageTemplates") && !isFolder && project.tasks.length > 0 && (
-                <Link href={`${path}?template=1`} className="menu-item"><Icon name="task" /> Save as template</Link>
               )}
               {canDelete && (
                 <form action={deleteProject}>
@@ -154,23 +170,6 @@ export default async function ProjectPage({
             <Link href={path} className="button secondary">Cancel</Link>
           </div>
         </form>
-      )}
-
-      {query.template && can(me, "canManageTemplates") && (
-        <div className="box" style={{ maxWidth: 560, margin: "12px 0" }}>
-          {project.due ? (
-            <form action={saveProjectAsTemplate} className="stack">
-              <input type="hidden" name="projectId" value={project.id} />
-              <label>Template name<input type="text" name="name" defaultValue={project.title} maxLength={80} /></label>
-              <div className="row">
-                <button>Save as template</button>
-                <Link href={path} className="button secondary">Cancel</Link>
-              </div>
-            </form>
-          ) : (
-            <p className="small muted" style={{ margin: 0 }}>Give the project a due date first (Edit details), so task dates can be saved relative to it.</p>
-          )}
-        </div>
       )}
 
       {project.status === "proposed" &&
@@ -216,17 +215,41 @@ export default async function ProjectPage({
       </div>
       {tasks.length > 0 && (
         <div className="list">
-          {tasks.map((t) => (
-            <Link key={t.id} href={link(t.id)} scroll={false} className={`list-row cols-task${finished(t.status) ? " is-finished" : ""}`}>
-              <span className="name">
-                <Icon name={t.status === "done" ? "check" : t.isMilestone ? "flag" : "circle"} />
-                <span title={t.isMilestone ? "Milestone" : undefined}>{t.title}</span>
-              </span>
-              <span className="cell optional">{t.owner ? (t.ownerId === me.id ? "You" : t.owner.name) : <span className="chip blue">Up for grabs</span>}</span>
-              <span className="cell optional">{t.due ? formatDay(t.due) : ""}</span>
-              <span className="cell"><StatusText task={t} today={today} short /></span>
-            </Link>
-          ))}
+          {rows.map(({ task: t, copies, finished: allDone }) => {
+            const shared = copies.length > 1;
+            const doneCount = copies.filter((c) => c.status === "done").length;
+            const mine = shared && t.ownerId === me.id;
+            return (
+              <Link key={t.id} href={link(t.id)} scroll={false} className={`list-row cols-task${allDone ? " is-finished" : ""}`}>
+                <span className="name">
+                  <Icon name={allDone && doneCount ? "check" : t.isMilestone ? "flag" : "circle"} />
+                  <span title={t.isMilestone ? "Milestone" : undefined}>{t.title}</span>
+                </span>
+                <span className="cell optional">
+                  {shared ? (
+                    <span className="assignees">
+                      <AvatarStack people={copies.flatMap((c) => (c.owner ? [c.owner] : []))} size={22} max={4} />
+                      <span>{copies.length >= execs.length ? "Everyone" : `${copies.length} people`}</span>
+                    </span>
+                  ) : t.owner ? (
+                    <Assignees task={t} meId={me.id} />
+                  ) : (
+                    <span className="chip blue">Up for grabs</span>
+                  )}
+                </span>
+                <span className="cell optional">{t.due ? formatDay(t.due) : ""}</span>
+                <span className="cell">
+                  {shared ? (
+                    <span className={`status ${allDone ? "done" : "muted"}`} title={mine ? "Opens your copy" : undefined}>
+                      {doneCount} of {copies.length} done
+                    </span>
+                  ) : (
+                    <StatusText task={t} today={today} short />
+                  )}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
       {isExec && project.status === "active" && (
@@ -235,13 +258,7 @@ export default async function ProjectPage({
           <input type="hidden" name="projectId" value={project.id} />
           <div className="row">
             <input type="text" name="title" required maxLength={160} placeholder={tasks.length ? "Add a task" : "Add the first task, e.g. Confirm a speaker and date"} aria-label="New task" style={{ flex: 3, minWidth: 200 }} />
-            {manages && (
-              <select name="ownerId" defaultValue="open" aria-label="Assign to" style={{ flex: 1, minWidth: 130 }}>
-                <option value="open">Up for grabs</option>
-                <option value="everyone">Everyone</option>
-                {execs.map((m) => <option key={m.id} value={m.id}>{m.id === me.id ? "You" : m.name}</option>)}
-              </select>
-            )}
+            {manages && <AssigneePicker people={pickable(execs)} meId={me.id} allowEveryone />}
             <input type="date" name="due" aria-label="Due date (optional)" title="Due date (optional)" style={{ flex: 1, minWidth: 130 }} />
             <button>Add</button>
           </div>
@@ -260,6 +277,7 @@ export default async function ProjectPage({
               )}
               <label style={{ flex: 1, margin: 0 }}>Time<input type="time" name="dueTime" /></label>
             </div>
+
             <div style={{ marginTop: 8 }}>
               <label style={{ margin: 0 }}>Description<textarea name="description" maxLength={4000} placeholder="Details or context (optional)" /></label>
             </div>

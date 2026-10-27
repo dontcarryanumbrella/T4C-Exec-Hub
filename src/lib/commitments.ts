@@ -4,7 +4,7 @@ import { activeWeek, addDays } from "./dates";
 
 export const MAX_COMMITMENTS = 10;
 
-// The same rule applies to self-created, assigned, and template tasks.
+// The same rule applies to self-created and assigned tasks.
 export async function joinWeek(
   memberId: string | null, taskId: string, due: string | null,
   client: Prisma.TransactionClient = db, week = activeWeek(),

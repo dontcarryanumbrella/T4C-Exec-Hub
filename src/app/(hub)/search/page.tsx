@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shell";
 import { Avatar, StatusText, withTask } from "@/components/bits";
 import { Icon } from "@/components/icons";
 import TaskPanel from "@/components/TaskPanel";
+import { peopleOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "Search · T4C Exec Hub" };
 
@@ -23,7 +24,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     ? await Promise.all([
         db.task.findMany({
           where: { title: { contains: q }, status: { not: "dropped" } },
-          include: { owner: true, project: true, waitingOn: true, helpRequests: true },
+          include: { owner: true, coOwners: true, project: true, waitingOn: true, helpRequests: true },
           orderBy: [{ status: "asc" }, { due: "asc" }],
           take: 20,
         }),
@@ -67,7 +68,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               <Link key={t.id} href={link(t.id)} scroll={false} className="list-row cols-search">
                 <span className="name"><Icon name={t.status === "done" ? "check" : "circle"} /><span>{t.title}</span></span>
                 <span className="cell">
-                  <StatusText task={t} today={today} short /> · {t.ownerId === me.id ? "You" : (t.owner?.name ?? "Up for grabs")}
+                  <StatusText task={t} today={today} short /> · {peopleOn(t, me.id)}
                   {t.project && ` · ${t.project.title}`}
                 </span>
               </Link>

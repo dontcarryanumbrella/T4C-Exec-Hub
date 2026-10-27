@@ -28,8 +28,9 @@ import { applyUndo, recordUndo } from "@/lib/undo";
 import { notify, pingMentions } from "@/lib/pings";
 import { xpFor, xpNote } from "@/lib/xp";
 import { AVATAR_COLORS, AVATAR_EXTRAS, AVATAR_FACES, AVATAR_SHAPES } from "@/lib/avatar";
-import { DEFAULT_FOLDER } from "@/lib/folders";
+import { DEFAULT_FOLDER, isBuiltInFolder } from "@/lib/folders";
 import { joinWeek, moveCommitments, MAX_COMMITMENTS } from "@/lib/commitments";
+import { isOnTask, workingOn } from "@/lib/tasks";
 
 // Three commitments is the target that keeps priorities credible; people can
 // take on more when they choose to, up to a sanity cap.
@@ -108,14 +109,17 @@ function forbid(): never {
   throw new Error("You don't have permission to do that.");
 }
 
-// Who can change a task: its owner, the project's owner, or anyone with the
-// "manage tasks" permission.
+// Who can change a task: the people on it, the project's owner, or anyone
+// with the "manage tasks" permission.
 async function taskForEdit(taskId: string) {
   const me = await requireMember();
-  const task = await db.task.findUnique({ where: { id: taskId }, include: { project: { select: { ownerId: true } } } });
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    include: { project: { select: { ownerId: true } }, coOwners: { select: { id: true } } },
+  });
   if (!task) throw new Error("That task no longer exists.");
   const manages = can(me, "canManageTasks") || (!!task.project && task.project.ownerId === me.id);
-  const canEdit = task.ownerId === me.id || manages;
+  const canEdit = isOnTask(task, me.id) || manages;
   return { me, task, canEdit, manages };
 }
 
@@ -128,6 +132,14 @@ const EVERYONE = "everyone";
 async function ownersFor(wanted: string, me: { id: string }): Promise<(string | null)[]> {
   if (wanted === EVERYONE) return (await db.member.findMany({ where: { kind: "exec" }, select: { id: true } })).map((m) => m.id);
   return [wanted === OPEN ? null : (await memberExists(wanted)) ? wanted : me.id];
+}
+
+// The execs ticked as also working on a task, minus its owner.
+async function coOwnersFor(fd: FormData, ownerId: string | null): Promise<string[]> {
+  if (!ownerId) return [];
+  const ids = [...new Set(fd.getAll("coOwnerId").map(String))].filter((id) => id !== ownerId);
+  if (!ids.length) return [];
+  return (await db.member.findMany({ where: { id: { in: ids }, kind: "exec" }, select: { id: true } })).map((m) => m.id);
 }
 
 function cardPlacement(onCards: number, total: number): string {
@@ -458,181 +470,21 @@ export async function deleteShoutout(fd: FormData) {
 export async function createProject(fd: FormData) {
   const me = await requirePermission("canCreateProjects");
   const title = str(fd, "title");
-  if (!title) return refuse(fd, "Give the project a name first.", "/projects");
-  const due = optDate(fd, "due");
-  const templateId = str(fd, "templateId");
-  if (templateId && !due) return refuse(fd, "Templates count back from the event date, so pick a due date.", "/projects");
+  const isFolder = str(fd, "kind") === "folder";
+  if (!title) return refuse(fd, `Give the ${isFolder ? "folder" : "project"} a name first.`, "/projects");
+  // General folders never end, so they take no date.
+  const due = isFolder ? null : optDate(fd, "due");
   const wanted = str(fd, "ownerId");
   const ownerId = (await memberExists(wanted)) ? wanted : me.id;
   const project = await db.project.create({
-    data: { title, goal: str(fd, "goal", LIMIT.line), due, ownerId, status: "active" },
+    data: { title, goal: str(fd, "goal", LIMIT.line), due, ownerId, status: "active", kind: isFolder ? "folder" : "project" },
   });
-  const made = templateId && due ? await applyTemplate(templateId, project.id, due, me.id) : 0;
-  await tell(me, made ? `Created “${title}” with ${made} tasks from the template.` : `Created “${title}”.`, {
+  await tell(me, `Created “${title}”.`, {
     undo: { kind: "project.create", label: `creating “${title}”`, payload: { id: project.id }, needs: "canCreateProjects" },
-    next: made ? undefined : { label: "Add the first task", href: `/projects/${project.id}#add-task` },
+    next: { label: "Add the first task", href: `/projects/${project.id}#add-task` },
   });
   revalidatePath("/", "layout");
   redirect(`/projects/${project.id}`);
-}
-
-// Copies a template's tasks into a project: dates count back from the
-// project's due date, owners come from matching exec roles (tasks whose role
-// nobody holds are left up for grabs), and "waiting on" links are rebuilt.
-async function applyTemplate(templateId: string, projectId: string, projectDue: string, assignerId: string): Promise<number> {
-  const template = await db.template.findUnique({
-    where: { id: templateId },
-    include: { tasks: { orderBy: { position: "asc" } } },
-  });
-  if (!template) return 0;
-  const members = await db.member.findMany({ where: { kind: "exec" } });
-  const ownerFor = (role: string) =>
-    members.find((m) => role && m.role.trim().toLowerCase() === role.trim().toLowerCase())?.id ?? null;
-
-  const idByPosition = new Map<number, string>();
-  const handedOut = new Map<string, number>();
-  for (const tt of template.tasks) {
-    const ownerId = ownerFor(tt.role);
-    const task = await db.task.create({
-      data: {
-        title: tt.title,
-        projectId,
-        ownerId,
-        assignedById: ownerId && ownerId !== assignerId ? assignerId : null,
-        due: addDays(projectDue, tt.offsetDays),
-        isMilestone: tt.isMilestone,
-      },
-    });
-    idByPosition.set(tt.position, task.id);
-    await joinWeek(ownerId, task.id, task.due);
-    if (ownerId && ownerId !== assignerId) {
-      handedOut.set(ownerId, (handedOut.get(ownerId) ?? 0) + 1);
-    }
-  }
-  // One ping per person, not one per task.
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
-  const assigner = await nameOf(assignerId);
-  for (const [who, n] of handedOut)
-    await notify(who, assignerId, `${assigner} gave you ${n} task${n === 1 ? "" : "s"} in “${project?.title}”.`, `/projects/${projectId}`);
-  for (const tt of template.tasks) {
-    const target = tt.waitingOnPosition == null ? undefined : idByPosition.get(tt.waitingOnPosition);
-    const id = idByPosition.get(tt.position)!;
-    const waitingOnId = target ? await validWaitingOn(id, target, projectId) : null;
-    if (waitingOnId) await db.task.update({ where: { id }, data: { waitingOnId } });
-  }
-  return template.tasks.length;
-}
-
-// ---------- templates ----------
-
-export async function createTemplate(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const name = str(fd, "name", 80);
-  if (!name) return refuse(fd, "Name the template first.", "/projects/templates");
-  const t = await db.template.create({ data: { name, description: str(fd, "description", LIMIT.line) } });
-  await tell(me, `Template “${name}” created. Add its tasks below.`);
-  revalidatePath("/", "layout");
-  redirect(`/projects/templates?open=${t.id}`);
-}
-
-export async function updateTemplate(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const name = str(fd, "name", 80);
-  await db.template.updateMany({
-    where: { id: str(fd, "templateId") },
-    data: { ...(name ? { name } : {}), description: str(fd, "description", LIMIT.line) },
-  });
-  await tell(me, "Template saved.");
-  done(fd, "/projects/templates");
-}
-
-export async function deleteTemplate(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  await db.template.deleteMany({ where: { id: str(fd, "templateId") } });
-  await tell(me, "Template deleted. Projects made from it are unchanged.", { tone: "info" });
-  done(fd, "/projects/templates");
-}
-
-function templateTaskFields(fd: FormData) {
-  const waiting = str(fd, "waitingOnPosition");
-  const offset = Math.trunc(Number(str(fd, "offsetDays")));
-  return {
-    title: str(fd, "title"),
-    offsetDays: Number.isFinite(offset) ? Math.max(-365, Math.min(365, offset)) : 0,
-    isMilestone: fd.get("isMilestone") === "on",
-    role: str(fd, "role", 100),
-    waitingOnPosition: waiting === "" || !Number.isInteger(Number(waiting)) ? null : Number(waiting),
-  };
-}
-
-export async function addTemplateTask(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const templateId = str(fd, "templateId");
-  const fields = templateTaskFields(fd);
-  if (!fields.title) return refuse(fd, "Write the task's outcome first.", "/projects/templates");
-  if (await db.template.count({ where: { id: templateId } })) {
-    const last = await db.templateTask.findFirst({ where: { templateId }, orderBy: { position: "desc" } });
-    await db.templateTask.create({ data: { ...fields, templateId, position: (last?.position ?? -1) + 1 } });
-    await tell(me, "Task added to the template.");
-  }
-  done(fd, "/projects/templates");
-}
-
-export async function updateTemplateTask(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const current = await db.templateTask.findUnique({ where: { id: str(fd, "templateTaskId") } });
-  if (current) {
-    const fields = templateTaskFields(fd);
-    if (fields.waitingOnPosition === current.position) fields.waitingOnPosition = null;
-    await db.templateTask.update({ where: { id: current.id }, data: { ...fields, title: fields.title || current.title } });
-    await tell(me, "Template task saved.");
-  }
-  done(fd, "/projects/templates");
-}
-
-export async function deleteTemplateTask(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const tt = await db.templateTask.findUnique({ where: { id: str(fd, "templateTaskId") } });
-  if (tt) {
-    await db.templateTask.updateMany({
-      where: { templateId: tt.templateId, waitingOnPosition: tt.position },
-      data: { waitingOnPosition: null },
-    });
-    await db.templateTask.delete({ where: { id: tt.id } });
-    await tell(me, `Removed “${tt.title}” from the template.`, { tone: "info" });
-  }
-  done(fd, "/projects/templates");
-}
-
-// Turns a finished (or well-planned) project into a reusable template.
-export async function saveProjectAsTemplate(fd: FormData) {
-  const me = await requirePermission("canManageTemplates");
-  const project = await db.project.findUnique({
-    where: { id: str(fd, "projectId") },
-    include: { tasks: { where: { status: { not: "dropped" } }, include: { owner: true }, orderBy: { createdAt: "asc" } } },
-  });
-  if (!project) redirect("/projects");
-  if (!project.due) return refuse(fd, "Give the project a due date first, so task dates can be saved relative to it.", `/projects/${project.id}`);
-  const positionById = new Map(project.tasks.map((t, i) => [t.id, i]));
-  const t = await db.template.create({
-    data: {
-      name: str(fd, "name", 80) || project.title,
-      description: `Made from “${project.title}”. Due date = the event date.`,
-      tasks: {
-        create: project.tasks.map((task, position) => ({
-          position,
-          title: task.title,
-          offsetDays: task.due ? daysBetween(project.due!, task.due) : 0,
-          isMilestone: task.isMilestone,
-          role: task.owner?.role ?? "",
-          waitingOnPosition: task.waitingOnId ? (positionById.get(task.waitingOnId) ?? null) : null,
-        })),
-      },
-    },
-  });
-  await tell(me, `Saved as the template “${t.name}”. New projects can start from it.`);
-  revalidatePath("/", "layout");
-  redirect(`/projects/templates?open=${t.id}`);
 }
 
 export async function proposeProject(fd: FormData) {
@@ -710,13 +562,13 @@ export async function updateProject(fd: FormData) {
   done(fd, `/projects/${project.id}`);
 }
 
-// Deleting a project folder takes its tasks, links, and discussion with it.
-// Role folders are standing areas and can't be deleted.
+// Deleting a folder takes its tasks, links, and discussion with it. The
+// built-in general folders (one per role) can't be deleted.
 export async function deleteProject(fd: FormData) {
   const me = await requireMember();
   const project = await db.project.findUnique({ where: { id: str(fd, "projectId") }, include: { _count: { select: { tasks: true } } } });
   if (!project) redirect("/projects");
-  if (project.kind === "folder") forbid();
+  if (isBuiltInFolder(project)) forbid();
   const mayDelete =
     project.ownerId === me.id || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id);
   if (!mayDelete) forbid();
@@ -740,6 +592,8 @@ export async function createTask(fd: FormData) {
   if (projectId && (!project || project.status !== "active")) forbid();
   const manages = can(me, "canManageTasks") || project?.ownerId === me.id;
   const owners = manages ? await ownersFor(str(fd, "ownerId"), me) : [me.id];
+  // Everyone gets separate copies, so extra people only apply to a single task.
+  const coOwnerIds = manages && owners.length === 1 ? await coOwnersFor(fd, owners[0]) : [];
   const taskIds: string[] = [];
   let onCards = 0;
   for (const ownerId of owners) {
@@ -748,6 +602,7 @@ export async function createTask(fd: FormData) {
         title,
         projectId: projectId || null,
         ownerId,
+        coOwners: { connect: coOwnerIds.map((id) => ({ id })) },
         assignedById: ownerId && ownerId !== me.id ? me.id : null,
         description: str(fd, "description", LIMIT.text),
         due: optDate(fd, "due"),
@@ -762,11 +617,15 @@ export async function createTask(fd: FormData) {
     if (ownerId && ownerId !== me.id) {
       await notify(ownerId, me.id, `${me.name} gave you “${title}”${project ? ` in ${project.title}` : ""}. ${cardPlacement(Number(onCard), 1)}`, `/?task=${task.id}`);
     }
+    for (const id of coOwnerIds) {
+      if (id !== me.id) await notify(id, me.id, `${me.name} added you to “${title}”${project ? ` in ${project.title}` : ""}.`, `/?task=${task.id}`);
+    }
   }
   const [ownerId] = owners;
+  const also = coOwnerIds.length ? ` with ${coOwnerIds.length} other${coOwnerIds.length === 1 ? "" : "s"}` : "";
   const who =
     owners.length > 1 ? `Everyone has their own copy (${owners.length} people)`
-    : !ownerId ? "It's up for grabs" : ownerId === me.id ? "It's yours" : `It's assigned to ${await nameOf(ownerId)}`;
+    : !ownerId ? "It's up for grabs" : ownerId === me.id ? `It's yours${also}` : `It's assigned to ${await nameOf(ownerId)}${also}`;
   await tell(me, `Added “${title}”. ${who}. ${ownerId || owners.length > 1 ? cardPlacement(onCards, owners.length) : "An exec can take it on from the task panel."}`, { undo: { kind: "task.create", label: `adding “${title}”`, payload: { taskIds } } });
   done(fd);
 }
@@ -779,6 +638,9 @@ export async function updateTask(fd: FormData) {
   // Owners can hand a task to someone or release it; both count as assigning.
   const ownerId = wanted === OPEN ? null : (await memberExists(wanted)) ? wanted : task.ownerId;
   const reassigned = ownerId !== task.ownerId;
+  const prevCoOwners = task.coOwners.map((c) => c.id);
+  const coOwnerIds = await coOwnersFor(fd, ownerId);
+  const addedCoOwners = coOwnerIds.filter((id) => !prevCoOwners.includes(id));
   const due = optDate(fd, "due");
   const waitingOnId = await validWaitingOn(task.id, str(fd, "waitingOnId"), task.projectId);
   let result: { commitments?: Awaited<ReturnType<typeof moveCommitments>>; onCard: boolean };
@@ -790,6 +652,7 @@ export async function updateTask(fd: FormData) {
           title: str(fd, "title") || task.title,
           description: str(fd, "description", LIMIT.text),
           ownerId,
+          coOwners: { set: coOwnerIds.map((id) => ({ id })) },
           ...(reassigned ? { assignedById: ownerId && ownerId !== me.id ? me.id : null } : {}),
           due,
           dueTime: optTime(fd, "dueTime"),
@@ -813,12 +676,15 @@ export async function updateTask(fd: FormData) {
   if (reassigned && ownerId && ownerId !== me.id) {
     await notify(ownerId, me.id, `${me.name} gave you “${task.title}”. ${cardPlacement(Number(result.onCard), 1)}`, `/?task=${task.id}`);
   }
+  for (const id of addedCoOwners) {
+    if (id !== me.id) await notify(id, me.id, `${me.name} added you to “${task.title}”.`, `/?task=${task.id}`);
+  }
   const handed = reassigned
     ? ownerId ? ` ${ownerId === me.id ? "You own it now" : `${await nameOf(ownerId)} owns it now`}. ${cardPlacement(Number(result.onCard), 1)}`
       : " It's up for grabs now and off the previous owner's current and future cards."
     : "";
   await tell(me, `Saved.${handed}`, {
-    undo: { kind: "task.fields", label: "those task changes", payload: { taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), commitments: result.commitments } },
+    undo: { kind: "task.fields", label: "those task changes", payload: { taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), prevCoOwners, commitments: result.commitments } },
   });
   done(fd);
 }
@@ -899,8 +765,8 @@ export async function claimTask(fd: FormData) {
 // adjust their week without redoing the whole check-in.
 export async function toggleThisWeek(fd: FormData) {
   const me = await requireExec();
-  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") } });
-  if (!task || task.ownerId !== me.id) return refuse(fd, "Only the task's owner can add it to their week.");
+  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") }, include: { coOwners: { select: { id: true } } } });
+  if (!task || !isOnTask(task, me.id)) return refuse(fd, "Only the people on a task can add it to their week.");
   const week = activeWeek();
   const existing = await db.commitment.findFirst({ where: { memberId: me.id, taskId: task.id, weekStart: week } });
   if (existing) {
@@ -1082,7 +948,7 @@ export async function submitCheckIn(_prev: CheckInResult, fd: FormData): Promise
 
   const ids = [...new Set(fd.getAll("task").map(String))];
   const claimIds = [...new Set(fd.getAll("claim").map(String))];
-  const tasks = await db.task.findMany({ where: { id: { in: ids }, ownerId: me.id, status: { notIn: ["done", "dropped"] } } });
+  const tasks = await db.task.findMany({ where: { id: { in: ids }, ...workingOn(me.id), status: { notIn: ["done", "dropped"] } } });
   if (tasks.length !== ids.length) return { error: "Some tasks changed ownership or status. Refresh to see your latest work." };
   const plans = tasks.map((task) => ({ task, choice: str(fd, `plan_${task.id}`), due: optDate(fd, `date_${task.id}`), help: str(fd, `help_${task.id}`, LIMIT.line) }));
   if (plans.some((p) => !["week", "later", "done"].includes(p.choice))) return { error: "Choose This week, Later, or Done for each task." };
@@ -1117,7 +983,7 @@ export async function submitCheckIn(_prev: CheckInResult, fd: FormData): Promise
           });
         }
         const { count } = await tx.task.updateMany({
-          where: { id: task.id, ownerId: me.id, status: task.status },
+          where: { id: task.id, ...workingOn(me.id), status: task.status },
           data: finished ? { status: "done", completedAt: new Date(), blockedReason: "" } : { due },
         });
         if (!count) throw new Error(stale);
@@ -1255,6 +1121,7 @@ export async function addActionItem(fd: FormData) {
   if (!(await db.meeting.count({ where: { id: meetingId } }))) redirect("/meetings");
   if (!title) return refuse(fd, "Write the action item first.", `/meetings/${meetingId}`);
   const owners = await ownersFor(str(fd, "ownerId"), me);
+  const coOwnerIds = owners.length === 1 ? await coOwnersFor(fd, owners[0]) : [];
   const wantedProject = str(fd, "projectId");
   const projectId =
     wantedProject && (await projectExists(wantedProject, "active"))
@@ -1264,13 +1131,19 @@ export async function addActionItem(fd: FormData) {
   let onCards = 0;
   for (const ownerId of owners) {
     const task = await db.task.create({
-      data: { title, meetingId, ownerId, assignedById: ownerId && ownerId !== me.id ? me.id : null, due: optDate(fd, "due"), projectId },
+      data: {
+        title, meetingId, ownerId, coOwners: { connect: coOwnerIds.map((id) => ({ id })) },
+        assignedById: ownerId && ownerId !== me.id ? me.id : null, due: optDate(fd, "due"), projectId,
+      },
     });
     taskIds.push(task.id);
     const onCard = await joinWeek(ownerId, task.id, task.due);
     onCards += Number(onCard);
     if (ownerId && ownerId !== me.id) {
       await notify(ownerId, me.id, `${me.name} gave you an action item: “${title}”. ${cardPlacement(Number(onCard), 1)}`, `/?task=${task.id}`);
+    }
+    for (const id of coOwnerIds) {
+      if (id !== me.id) await notify(id, me.id, `${me.name} added you to an action item: “${title}”.`, `/?task=${task.id}`);
     }
   }
   const [ownerId] = owners;

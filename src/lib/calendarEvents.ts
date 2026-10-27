@@ -1,15 +1,16 @@
 import { db } from "./db";
 import { MINUTES, type FeedEvent } from "./calendar";
 import { addDays, mondayOf, todayISO } from "./dates";
+import { workingOn } from "./tasks";
 
-// Everything that belongs in one person's calendar: tasks they own (with a
+// Everything that belongs in one person's calendar: tasks they're on (with a
 // date), deadlines of projects they own, all exec meetings, and (for execs)
 // the weekly Sunday check-in.
 export async function eventsFor(memberId: string): Promise<FeedEvent[]> {
   const member = await db.member.findUnique({ where: { id: memberId }, select: { kind: true } });
   const [tasks, projects, meetings] = await Promise.all([
     db.task.findMany({
-      where: { ownerId: memberId, due: { not: null }, status: { not: "dropped" } },
+      where: { ...workingOn(memberId), due: { not: null }, status: { not: "dropped" } },
       include: { project: true },
     }),
     db.project.findMany({ where: { ownerId: memberId, status: "active", due: { not: null } } }),

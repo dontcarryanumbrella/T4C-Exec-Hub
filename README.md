@@ -18,7 +18,7 @@ A shared workspace for a student club's exec board. Everyone plans their week, t
 
 **Passwordless sign-in.** Admins invite people by email. Links are single-use and expiring (72 h for invites, 30 min for sign-ins), and only a SHA-256 hash of each token is stored. The link opens a "Continue" button rather than signing in on load, so email scanners can't spend it. Sessions last 120 days per device. The sign-in form is rate-limited per person and per IP, and tells people when an address isn't on file (pointing NetID addresses to their alias) rather than leaving them waiting for an email.
 
-**Server-side permissions.** Seven per-person permissions (propose, create projects, approve, manage tasks, write notes, manage templates, manage members), filled from presets and adjustable per box. Every Server Action re-checks permission and ownership on the server; hidden buttons are never the only guard.
+**Server-side permissions.** Six per-person permissions (propose, create projects, approve, manage tasks, write notes, manage members), filled from presets and adjustable per box. Every Server Action re-checks permission and ownership on the server; hidden buttons are never the only guard.
 
 **Undo for nearly everything.** Each action records how to reverse itself; the notice offers Undo for 30 minutes. Undo re-checks ownership, age, and permission, and refuses if the record changed since (for example, a task handed off again).
 
@@ -43,7 +43,7 @@ You need Node 20+ and a Postgres database (a free hosted one, such as Prisma Pos
 ```bash
 npm install
 cp .env.example .env      # then set DATABASE_URL to your Postgres connection string
-npm run db:setup          # creates the tables and seeds the roster, folders, and templates
+npm run db:setup          # creates the tables and seeds the roster and folders
 npm run dev
 ```
 

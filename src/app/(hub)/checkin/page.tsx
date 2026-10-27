@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import CheckInForm from "./CheckInForm";
 import { PageHeader } from "@/components/shell";
 import { DEFAULT_FOLDER } from "@/lib/folders";
+import { workingOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "Check in · T4C Exec Hub" };
 
@@ -24,12 +25,12 @@ export default async function CheckInPage({ searchParams }: { searchParams: Prom
 
   const [doneRecently, commitments, openTasks, projects, existing, upForGrabs] = await Promise.all([
     db.task.findMany({
-      where: { ownerId: me.id, status: "done", completedAt: { gte: new Date(`${lastWeek}T00:00:00Z`) } },
+      where: { ...workingOn(me.id), status: "done", completedAt: { gte: new Date(`${lastWeek}T00:00:00Z`) } },
       include: { project: true }, orderBy: { completedAt: "desc" },
     }),
     db.commitment.findMany({ where: { memberId: me.id, weekStart: { in: [lastWeek, week] } } }),
     db.task.findMany({
-      where: { ownerId: me.id, status: { notIn: ["done", "dropped"] } },
+      where: { ...workingOn(me.id), status: { notIn: ["done", "dropped"] } },
       include: { project: true, assignedBy: true }, orderBy: [{ due: "asc" }, { createdAt: "asc" }],
     }),
     db.project.findMany({ where: { status: "active" }, orderBy: [{ kind: "desc" }, { title: "asc" }] }),

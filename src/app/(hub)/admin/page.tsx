@@ -17,10 +17,7 @@ export const metadata: Metadata = { title: "Admin · T4C Exec Hub" };
 // that row; everything else is in the row's ⋯ menu.
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ invite?: string; access?: string; edit?: string }> }) {
   const me = await requireMember();
-  if (!can(me, "canManageMembers")) {
-    if (can(me, "canManageTemplates")) redirect("/projects/templates");
-    redirect("/");
-  }
+  if (!can(me, "canManageMembers")) redirect("/");
   const q = await searchParams;
   const members = await db.member.findMany({ orderBy: [{ kind: "asc" }, { sortOrder: "asc" }, { name: "asc" }] });
 
@@ -28,14 +25,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <div style={{ maxWidth: 960 }}>
       <PageHeader
         title="Members"
-        actions={
-          <>
-            <Link href="/admin?invite=1" className="button">Invite</Link>
-            <Menu>
-              <Link href="/projects/templates" className="menu-item"><Icon name="task" /> Templates</Link>
-            </Menu>
-          </>
-        }
+        actions={<Link href="/admin?invite=1" className="button">Invite</Link>}
       />
 
       {q.invite && (

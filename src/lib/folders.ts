@@ -14,3 +14,7 @@ export const FOLDERS = [
 ] as const;
 
 export const DEFAULT_FOLDER = "Club Operations";
+
+// The folders above are permanent; general folders people add later can be deleted.
+export const isBuiltInFolder = (p: { kind: string; title: string }) =>
+  p.kind === "folder" && FOLDERS.some((f) => f.title === p.title);

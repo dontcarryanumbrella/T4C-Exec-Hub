@@ -12,6 +12,7 @@ import { activeWeek, formatDay, todayISO } from "@/lib/dates";
 import { suggestionsFor } from "@/lib/accomplishments";
 import { isOnline, presenceText } from "@/lib/presence";
 import { Avatar, StatusText } from "@/components/bits";
+import { workingOn } from "@/lib/tasks";
 import {
   addAccomplishment,
   decideSuggestion,
@@ -40,7 +41,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
       accomplishments: { orderBy: [{ date: "desc" }, { createdAt: "desc" }] },
       shoutoutsGot: { include: { from: true }, orderBy: { createdAt: "desc" } },
       commitments: {
-        where: { weekStart: activeWeek(), task: { ownerId: id } },
+        where: { weekStart: activeWeek(), task: workingOn(id) },
         include: { task: { include: { waitingOn: true, helpRequests: true, project: true } } },
       },
     },

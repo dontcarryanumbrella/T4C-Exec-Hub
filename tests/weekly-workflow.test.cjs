@@ -35,6 +35,7 @@ function fixture() {
   const state = { member: [{ id: "a", name: "Alex", kind: "exec" }, { id: "b", name: "Blair", kind: "exec" }], task: [], commitment: [], checkIn: [], helpRequest: [], undoEntry: [], project: [] };
   const matches = (row, where = {}) => Object.entries(where).every(([key, value]) => {
     if (value === undefined) return true;
+    if (key === "OR") return value.some((w) => matches(row, w));
     if (key === "memberId_taskId_weekStart" || key === "memberId_weekStart") return matches(row, value);
     if (key === "task") return matches(state.task.find((t) => t.id === row.taskId) ?? {}, value);
     if (value && typeof value === "object" && !(value instanceof Date)) return Object.entries(value).every(([op, v]) => {
@@ -44,10 +45,17 @@ function fixture() {
       if (op === "gte") return row[key] >= v;
       if (op === "gt") return row[key] > v;
       if (op === "lt") return row[key] < v;
+      if (op === "some") return (row[key] ?? []).some((r) => matches(r, v));
       throw new Error("Unhandled fixture operator: " + op);
     });
     return row[key] === value;
   });
+  // Relation writes ({ connect } / { set }) become a plain list of { id }.
+  const relations = (data) => {
+    const out = { ...data };
+    if (out.coOwners) out.coOwners = (out.coOwners.set ?? out.coOwners.connect ?? []).map(({ id }) => ({ id }));
+    return out;
+  };
   const db = {};
   for (const model of Object.keys(state)) {
     const table = {
@@ -55,9 +63,9 @@ function fixture() {
       findFirst: async ({ where }) => structuredClone(state[model].find((r) => matches(r, where)) ?? null),
       findMany: async ({ where = {} } = {}) => structuredClone(state[model].filter((r) => matches(r, where))),
       count: async ({ where = {} } = {}) => state[model].filter((r) => matches(r, where)).length,
-      create: async ({ data }) => { const row = { id: `new-${++seq}`, ...(model === "undoEntry" ? { usedAt: null } : {}), ...(model === "task" ? { status: "todo" } : {}), createdAt: new Date("2026-10-25T13:00:00Z"), ...data }; state[model].push(row); return structuredClone(row); },
-      updateMany: async ({ where, data }) => { const rows = state[model].filter((r) => matches(r, where)); rows.forEach((r) => Object.assign(r, data)); return { count: rows.length }; },
-      update: async ({ where, data }) => { const row = state[model].find((r) => matches(r, where)); if (!row) throw new Error("Record changed"); Object.assign(row, data); return structuredClone(row); },
+      create: async ({ data }) => { const row = { id: `new-${++seq}`, ...(model === "undoEntry" ? { usedAt: null } : {}), ...(model === "task" ? { status: "todo", coOwners: [] } : {}), createdAt: new Date("2026-10-25T13:00:00Z"), ...relations(data) }; state[model].push(row); return structuredClone(row); },
+      updateMany: async ({ where, data }) => { const rows = state[model].filter((r) => matches(r, where)); rows.forEach((r) => Object.assign(r, relations(data))); return { count: rows.length }; },
+      update: async ({ where, data }) => { const row = state[model].find((r) => matches(r, where)); if (!row) throw new Error("Record changed"); Object.assign(row, relations(data)); return structuredClone(row); },
       deleteMany: async ({ where }) => { state[model] = state[model].filter((r) => !matches(r, where)); },
       upsert: async ({ where, update, create }) => (await table.findUnique({ where })) ? table.update({ where, data: update }) : table.create({ data: create }),
     };
@@ -87,7 +95,7 @@ function form(values) {
   return fd;
 }
 const redirected = (fn, href) => assert.rejects(fn, (e) => e.href === href);
-const task = (id, extra = {}) => ({ id, title: id, ownerId: "a", status: "todo", projectId: null, due: null, completedAt: null, description: "", blockedReason: "", ...extra });
+const task = (id, extra = {}) => ({ id, title: id, ownerId: "a", coOwners: [], status: "todo", projectId: null, due: null, completedAt: null, description: "", blockedReason: "", ...extra });
 const commitment = (memberId, weekStart, taskId = "work") => ({ id: `${memberId}-${weekStart}-${taskId}`, memberId, weekStart, taskId });
 
 test("current week stays put on Saturday and Sunday, including year and DST boundaries", () => {
@@ -381,4 +389,17 @@ test("links never get a double slash when APP_URL ends with one", () => {
   const exports = {};
   vm.runInNewContext(code, { exports, process: { env: { APP_URL: "https://hub.example.test/" } } });
   assert.equal(`${exports.appUrl()}/checkin`, "https://hub.example.test/checkin");
+});
+
+test("extra people on a task can plan it into their own week; the owner can't be listed twice", async () => {
+  const f = fixture();
+  f.state.task.push(task("shared", { ownerId: "b" }));
+  await redirected(() => f.actions.toggleThisWeek(form({ taskId: "shared" })), "/");
+  assert.equal(f.state.commitment.length, 0);
+  f.state.member[0].canManageTasks = true;
+  await redirected(() => f.actions.updateTask(form({ taskId: "shared", ownerId: "b", title: "shared", coOwnerId: ["a", "b"] })), "/");
+  assert.deepEqual(f.state.task[0].coOwners, [{ id: "a" }]);
+  f.state.member[0].canManageTasks = false;
+  await redirected(() => f.actions.toggleThisWeek(form({ taskId: "shared" })), "/");
+  assert.deepEqual(f.state.commitment.map((c) => c.memberId), ["a"]);
 });

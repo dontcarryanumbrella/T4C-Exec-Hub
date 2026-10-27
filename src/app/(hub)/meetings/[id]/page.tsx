@@ -7,7 +7,9 @@ import { requireMember } from "@/lib/auth";
 import { activeWeek, addDays, formatDay, todayISO } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { taskStatus } from "@/lib/status";
-import { StatusText, withTask } from "@/components/bits";
+import { Assignees, StatusText, withTask } from "@/components/bits";
+import AssigneePicker from "@/components/AssigneePicker";
+import { pickable } from "@/lib/tasks";
 import { ConfirmButton } from "@/components/client";
 import TaskPanel from "@/components/TaskPanel";
 import MentionInput from "@/components/MentionInput";
@@ -63,7 +65,7 @@ export default async function MeetingPage({
     where: { id },
     include: {
       createdBy: true,
-      tasks: { include: { owner: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
+      tasks: { include: { owner: true, coOwners: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!meeting) notFound();
@@ -165,7 +167,7 @@ export default async function MeetingPage({
             {meeting.tasks.map((t) => (
               <tr key={t.id}>
                 <td><Link href={link(t.id)} scroll={false}>{t.title}</Link></td>
-                <td>{t.owner?.name ?? <span className="muted">Up for grabs</span>}</td>
+                <td><Assignees task={t} meId={me.id} /></td>
                 <td>{t.due ? formatDay(t.due) : "—"}</td>
                 <td><StatusText task={t} today={today} noDue /></td>
               </tr>
@@ -179,11 +181,7 @@ export default async function MeetingPage({
           <input type="hidden" name="back" value={path} />
           <div className="row">
             <input type="text" name="title" required maxLength={160} placeholder="Action item, e.g. Email Sanford about co-hosting" aria-label="Action item" style={{ flex: 3, minWidth: 220 }} />
-            <select name="ownerId" defaultValue="open" aria-label="Owner" style={{ flex: 1, minWidth: 130 }}>
-              <option value="open">Up for grabs</option>
-              <option value="everyone">Everyone</option>
-              {execs.map((m) => <option key={m.id} value={m.id}>{m.id === me.id ? "You" : m.name}</option>)}
-            </select>
+            <AssigneePicker people={pickable(execs)} meId={me.id} allowEveryone />
             <input type="date" name="due" aria-label="Due date (optional)" title="Due date (optional)" style={{ flex: 1, minWidth: 130 }} />
             <button>Add</button>
           </div>

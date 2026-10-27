@@ -4,7 +4,9 @@ import { activeWeek, addDays, formatDay, todayISO } from "@/lib/dates";
 import { dependents } from "@/lib/guards";
 import { can, type PermissionSet } from "@/lib/permissions";
 import { googleCalendarUrl } from "@/lib/calendar";
-import { CommentBody, StatusText } from "./bits";
+import { isOnTask, pickable } from "@/lib/tasks";
+import AssigneePicker from "./AssigneePicker";
+import { Assignees, CommentBody, StatusText } from "./bits";
 import { EscapeToClose } from "./client";
 import { Icon } from "./icons";
 import { Menu } from "./Menu";
@@ -39,6 +41,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
     where: { id: taskId },
     include: {
       owner: true,
+      coOwners: { orderBy: { name: "asc" } },
       project: true,
       waitingOn: true,
       assignedBy: true,
@@ -54,7 +57,8 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
 
   const today = todayISO();
   const manages = can(me, "canManageTasks") || (!!task.project && task.project.ownerId === me.id);
-  const canEdit = task.ownerId === me.id || manages;
+  const onIt = isOnTask(task, me.id);
+  const canEdit = onIt || manages;
   const isOwner = task.ownerId === me.id;
   const isUpForGrabs = !task.ownerId;
   const isOpen = task.status !== "done" && task.status !== "dropped";
@@ -80,7 +84,10 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
       : null;
   const [people, plannedWeeks] = await Promise.all([
     db.member.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    task.ownerId ? db.commitment.findMany({ where: { memberId: task.ownerId, taskId: task.id, weekStart: { gte: activeWeek() } }, select: { weekStart: true } }) : Promise.resolve([]),
+    // The people on it see their own card; everyone else sees the owner's.
+    task.ownerId
+      ? db.commitment.findMany({ where: { memberId: onIt ? me.id : task.ownerId, taskId: task.id, weekStart: { gte: activeWeek() } }, select: { weekStart: true } })
+      : Promise.resolve([]),
   ]);
   const onMyWeek = plannedWeeks.some((c) => c.weekStart === activeWeek());
   const onNextWeek = plannedWeeks.some((c) => c.weekStart === addDays(activeWeek(), 7));
@@ -128,10 +135,10 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
         </div>
 
         <h2 className="panel-title">{task.title}</h2>
-        <p className="small muted" style={{ margin: 0 }}>
+        <p className="small muted panel-meta" style={{ margin: 0 }}>
           <StatusText task={task} today={today} noDue />
           {" · "}
-          {isUpForGrabs ? "Up for grabs" : isOwner ? "You own this" : task.owner!.name}
+          {isOwner && !task.coOwners.length ? "You own this" : <Assignees task={task} meId={me.id} size={20} />}
           {task.due && ` · due ${formatDay(task.due)}${task.dueTime ? ` at ${timeLabel(task.dueTime)}` : ""}`}
           {isOwner && task.assignedBy && task.assignedById !== me.id && ` · from ${task.assignedBy.name}`}
         </p>
@@ -155,7 +162,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             ))}
           </form>
         )}
-        {isOwner && isOpen && me.kind === "exec" && (
+        {onIt && isOpen && me.kind === "exec" && (
           <form action={toggleThisWeek} style={{ marginTop: 8 }}>
             <Back />
             <input type="hidden" name="taskId" value={task.id} />
@@ -164,9 +171,11 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
         )}
         {task.ownerId && isOpen && (
           <p className="small muted" style={{ marginTop: 8 }}>
-            {onMyWeek ? "On the owner's card this week." : "Not on the owner's card this week."}
+            {onIt
+              ? onMyWeek ? "On your card this week." : "Not on your card this week."
+              : onMyWeek ? "On the owner's card this week." : "Not on the owner's card this week."}
             {onNextWeek && " Planned for next week."}
-            {isOwner && !onMyWeek && <> You still own it; add it above or choose it in <Link href="/checkin">your plan</Link>.</>}
+            {onIt && !onMyWeek && <> You&apos;re still on it; add it above or choose it in <Link href="/checkin">your plan</Link>.</>}
           </p>
         )}
         {canEdit && isOpen && (
@@ -258,7 +267,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             <div key={l.id} className="file-row">
               <Icon name="link" />
               <a href={l.url} target="_blank" rel="noreferrer noopener">{l.title}</a>
-              {(manages || l.addedById === me.id || isOwner) && (
+              {(manages || l.addedById === me.id || onIt) && (
                 <form action={removeLink} className="hover-reveal">
                   <Back />
                   <input type="hidden" name="linkId" value={l.id} />
@@ -305,18 +314,13 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
               <input type="hidden" name="blockedReason" value={task.blockedReason} />
               <label>Outcome<input type="text" name="title" defaultValue={task.title} maxLength={160} /></label>
               <label>Description<textarea name="description" defaultValue={task.description} maxLength={4000} placeholder="Details, context, links to look at" /></label>
+              <div>
+                <span className="field-label">Assigned to</span>
+                <AssigneePicker people={pickable(members)} meId={me.id} initial={task.ownerId ? [task.ownerId, ...task.coOwners.map((c) => c.id)] : []} />
+              </div>
               <div className="grid2">
-                <label>
-                  Owner
-                  <select name="ownerId" defaultValue={task.ownerId ?? "open"}>
-                    <option value="open">Up for grabs</option>
-                    {members.map((m) => <option key={m.id} value={m.id}>{m.id === me.id ? "You" : m.name}</option>)}
-                  </select>
-                </label>
-                <div className="grid2">
-                  <label>Due<input type="date" name="due" defaultValue={task.due ?? ""} /></label>
-                  <label>Time<input type="time" name="dueTime" defaultValue={task.dueTime ?? ""} /></label>
-                </div>
+                <label>Due<input type="date" name="due" defaultValue={task.due ?? ""} /></label>
+                <label>Time<input type="time" name="dueTime" defaultValue={task.dueTime ?? ""} /></label>
               </div>
               {waitable.length > 0 && (
                 <label>

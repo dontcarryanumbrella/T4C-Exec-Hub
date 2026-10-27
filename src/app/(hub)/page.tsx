@@ -9,12 +9,15 @@ import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
 import MoreToggle from "@/components/MoreToggle";
 import { taskStatus } from "@/lib/status";
+import { isOnTask } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "This Week · T4C Exec Hub" };
 
 // Cards show this many commitments; the rest fold under "+N more" so a busy
 // week doesn't stretch the whole grid.
 const CARD_LIMIT = 3;
+// Needs attention shows this many (most urgent first); the rest fold away.
+const ATTENTION_LIMIT = 3;
 
 function CommitmentItem({ task, href, today }: { task: Parameters<typeof StatusText>[0]["task"] & { id: string; title: string; helpOffers: unknown[] }; href: string; today: string }) {
   return (
@@ -54,6 +57,7 @@ export default async function ThisWeek({
       include: {
         task: {
           include: {
+            coOwners: { select: { id: true } },
             waitingOn: true,
             helpRequests: true,
             helpOffers: { where: { status: { not: "declined" } }, include: { helper: true } },
@@ -108,6 +112,14 @@ export default async function ThisWeek({
     return { ...first, who };
   });
 
+  const attnRow = (a: (typeof rows)[number]) => (
+    <Link key={a.task.id} href={taskHome(a.task)} className="attn-row">
+      <span className={`chip${a.priority < 2 ? " warn" : ""}`}>{a.label}</span>
+      <span className="attn-text">{a.task.title}<span className="small muted" style={{ display: "block" }}>{a.status.text}{a.task.helpRequests.length > 0 && ` · Help: ${a.task.helpRequests[0].message}`}</span></span>
+      <span className="muted small">{a.who}</span>
+    </Link>
+  );
+
   return (
     <>
       <PageHeader
@@ -140,13 +152,16 @@ export default async function ThisWeek({
         <>
           <div className="section-title"><h2>Needs attention now · {rows.length}</h2></div>
           <div className="box" style={{ padding: "4px 14px" }}>
-            {rows.map((a) => (
-              <Link key={a.task.id} href={taskHome(a.task)} className="attn-row">
-                <span className={`chip${a.priority < 2 ? " warn" : ""}`}>{a.label}</span>
-                <span className="attn-text">{a.task.title}<span className="small muted" style={{ display: "block" }}>{a.status.text}{a.task.helpRequests.length > 0 && ` · Help: ${a.task.helpRequests[0].message}`}</span></span>
-                <span className="muted small">{a.who}</span>
-              </Link>
-            ))}
+            {rows.slice(0, ATTENTION_LIMIT).map(attnRow)}
+            {rows.length > ATTENTION_LIMIT && (
+              <details className="attn-more">
+                <summary className="more-toggle">
+                  <span className="when-closed">Show {rows.length - ATTENTION_LIMIT} more</span>
+                  <span className="when-open">Show less</span>
+                </summary>
+                {rows.slice(ATTENTION_LIMIT).map(attnRow)}
+              </details>
+            )}
             {upForGrabs > 0 && (
               <Link href={isExec ? "/checkin#up-for-grabs" : "/projects"} className="attn-row">
                 <span className="chip blue">Up for grabs</span>
@@ -163,7 +178,7 @@ export default async function ThisWeek({
       <div className="section-title"><h2>Who&apos;s doing what</h2></div>
       <div className="cards">
         {members.map((m) => {
-          const mine = commitments.filter((c) => c.memberId === m.id && (week < current || c.task.ownerId === m.id));
+          const mine = commitments.filter((c) => c.memberId === m.id && (week < current || isOnTask(c.task, m.id)));
           const checkIn = checkInBy.get(m.id);
           const isMe = m.id === me.id;
           return (

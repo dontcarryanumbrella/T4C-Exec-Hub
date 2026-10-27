@@ -22,7 +22,6 @@ model Member {
   canApprove         Boolean @default(false)
   canManageTasks     Boolean @default(false)
   canWriteNotes      Boolean @default(false)
-  canManageTemplates Boolean @default(false)
   canManageMembers   Boolean @default(false)
   // Secret key in this person's private calendar feed URL; reset to revoke.
   calendarToken      String? @unique
@@ -47,6 +46,7 @@ model Member {
   proposed       Project[]     @relation("ProjectProposer")
   ownedTasks     Task[]        @relation("TaskOwner")
   assignedTasks  Task[]        @relation("TaskAssigner")
+  coOwnedTasks   Task[]        @relation("TaskCoOwners")
   meetings       Meeting[]
   notifications  Notification[] @relation("NotifyTo")
   sentPings      Notification[] @relation("NotifyFrom")
@@ -86,7 +86,8 @@ model Project {
   title        String
   goal         String    @default("")
   status       String    @default("active") // proposed | active | done | declined
-  // "folder" = a standing area (e.g. Brand & Marketing) that's never done;
+  // "folder" = a standing area (e.g. Brand & Marketing) that's never done,
+  // shown under General;
   // "project" = something with an end.
   kind         String    @default("project")
   due          String? // YYYY-MM-DD
@@ -116,6 +117,9 @@ model Task {
   // No owner = "up for grabs": anyone on the board can take it on.
   ownerId       String?
   owner         Member?   @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  // Others working on it alongside the owner. They can update it and plan it
+  // into their own week; the owner stays the one responsible.
+  coOwners      Member[]  @relation("TaskCoOwners")
   assignedById  String?
   assignedBy    Member?   @relation("TaskAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
   meetingId     String? // set when the task is an action item from a meeting
@@ -203,28 +207,6 @@ model Link {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-}
-
-// Recurring workflows (speaker event, workshop…). Task dates are offsets from
-// the project's due date, and "role" picks the default owner by exec role.
-model Template {
-  id          String         @id @default(cuid())
-  name        String
-  description String         @default("")
-  createdAt   DateTime       @default(now())
-  tasks       TemplateTask[]
-}
-
-model TemplateTask {
-  id                String   @id @default(cuid())
-  templateId        String
-  template          Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  position          Int
-  title             String
-  offsetDays        Int      @default(0) // relative to the project's due date; negative = before
-  isMilestone       Boolean  @default(false)
-  role              String   @default("")
-  waitingOnPosition Int?
 }
 
 // A win on someone's profile. Suggested ones come from finished work (a

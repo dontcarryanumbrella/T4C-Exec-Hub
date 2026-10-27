@@ -11,9 +11,9 @@ const SECTIONS: { id: string; title: string; steps: string[]; visual: React.Reac
   { id: "checkin", title: "Check in", steps: ["Open Plan this week or Plan next week.", "Choose This week / Later / Done, add any new outcomes, and save. Later keeps the task yours but off that plan."], visual: <MiniCheckin /> },
   { id: "new", title: "Add something", steps: ["+ New for a check-in, project, idea, meeting notes, or shoutout.", "New tasks due by Sunday (or with no date) join the owner's current card if it has room. Later deadlines stay available in check-in."], visual: <MiniNew /> },
   { id: "task", title: "Update a task", steps: ["Open it, then Not started / In progress / Done.", "Ask for help is next to the status controls. ⋯ has blocked, Google Calendar, and drop."], visual: <MiniPanel /> },
-  { id: "folders", title: "Folders and projects", steps: ["Folders are standing areas (one per role) and never end.", "Projects have an end date; approve ideas to make new ones."], visual: <MiniFolders /> },
+  { id: "folders", title: "Folders and projects", steps: ["General folders are standing areas (one per role, plus any you add) and never end.", "Projects have an end date; approve ideas to make new ones."], visual: <MiniFolders /> },
   { id: "ping", title: "Ping someone", steps: ["Type @ and a name in any comment or note.", "Or open their task and press Ping. They see it under the bell."], visual: <MiniPing /> },
-  { id: "calendar", title: "Calendar", steps: ["Calendar shows one week; Mine or Everyone.", "⋯ → Download (.ics) or Subscribe for Google Calendar."], visual: <MiniCalendar /> },
+  { id: "calendar", title: "Calendar", steps: ["Calendar shows your week: your tasks, your project deadlines, and meetings.", "⋯ → Download (.ics) or Subscribe for Google Calendar."], visual: <MiniCalendar /> },
   { id: "undo", title: "Undo a mistake", steps: ["When a change offers Undo, press it in the notice within 30 minutes."], visual: <MiniUndo /> },
   { id: "buddy", title: "Your buddy", steps: ["Profile → Build your buddy. Its color becomes your theme.", "Earn XP and climb Bronze → Silver → Gold → Diamond."], visual: <MiniBuddy /> },
 ];

@@ -8,10 +8,11 @@ import { createProject, proposeProject } from "../../../actions";
 
 export const metadata: Metadata = { title: "New · T4C Exec Hub" };
 
-// One short form at a time: either start a project or propose an idea.
-export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ idea?: string }> }) {
+// One short form at a time: start a project, add a general folder, or propose an idea.
+export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ idea?: string; kind?: string }> }) {
   const me = await requireMember();
-  const wantsIdea = !!(await searchParams).idea;
+  const query = await searchParams;
+  const wantsIdea = !!query.idea;
   const canCreate = can(me, "canCreateProjects");
   const idea = wantsIdea || !canCreate;
   if (idea && !can(me, "canPropose")) redirect("/projects");
@@ -29,13 +30,31 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
     );
   }
 
-  const [execs, templates] = await Promise.all([
-    db.member.findMany({ where: { kind: "exec" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
-    db.template.findMany({ include: { _count: { select: { tasks: true } } }, orderBy: { name: "asc" } }),
-  ]);
+  if (query.kind === "folder") {
+    const execs = await db.member.findMany({ where: { kind: "exec" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+    return (
+      <div style={{ maxWidth: 560 }}>
+        <PageHeader title="New general folder" back={{ href: "/projects", label: "Folders" }} sub="A standing area with no end date, listed under General." />
+        <form action={createProject} className="box stack" style={{ marginTop: 12 }}>
+          <input type="hidden" name="kind" value="folder" />
+          <label>Name<input type="text" name="title" required autoFocus maxLength={160} placeholder="e.g. Alumni Relations" /></label>
+          <label>
+            Owner
+            <select name="ownerId" defaultValue={me.id}>
+              {execs.map((m) => <option key={m.id} value={m.id}>{m.id === me.id ? "You" : m.name}</option>)}
+            </select>
+          </label>
+          <label>What goes here (optional)<input type="text" name="goal" maxLength={300} placeholder="e.g. Keeping in touch with past members" /></label>
+          <button>Create folder</button>
+        </form>
+      </div>
+    );
+  }
+
+  const execs = await db.member.findMany({ where: { kind: "exec" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   return (
     <div style={{ maxWidth: 560 }}>
-      <PageHeader title="New project folder" back={{ href: "/projects", label: "Folders" }} />
+      <PageHeader title="New project" back={{ href: "/projects", label: "Folders" }} sub="Something with an end date. For an ongoing area, make a general folder instead." />
       <form action={createProject} className="box stack" style={{ marginTop: 12 }}>
         <label>Name<input type="text" name="title" required autoFocus maxLength={160} placeholder="e.g. Fall speaker event" /></label>
         <div className="grid2">
@@ -47,18 +66,11 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
           </label>
           <label>Event or due date<input type="date" name="due" /></label>
         </div>
-        <label>
-          Start from
-          <select name="templateId" defaultValue="">
-            <option value="">A blank project</option>
-            {templates.map((t) => <option key={t.id} value={t.id}>{t.name} template ({t._count.tasks} tasks)</option>)}
-          </select>
-        </label>
         <details>
           <summary className="small">Add a goal (optional)</summary>
           <input type="text" name="goal" maxLength={300} placeholder="What does success look like?" style={{ marginTop: 6 }} />
         </details>
-        <button>Create folder</button>
+        <button>Create project</button>
       </form>
     </div>
   );

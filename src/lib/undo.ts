@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { can, type Permission } from "./permissions";
 import { activeWeek } from "./dates";
+import { workingOn } from "./tasks";
 
 // How long the Undo button in a notice keeps working.
 export const UNDO_MINUTES = 30;
@@ -47,6 +48,7 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
           data: { ...p.prev, completedAt: date(p.prev.completedAt) },
         });
         if (!count) return false; // A later handoff must not be overwritten.
+        if (p.prevCoOwners) await tx.task.update({ where: { id: p.taskId }, data: { coOwners: { set: (p.prevCoOwners as string[]).map((id) => ({ id })) } } });
         if (p.commitments) {
           const week = activeWeek();
           await tx.commitment.deleteMany({ where: { taskId: p.taskId, weekStart: { gte: week } } });
@@ -70,7 +72,7 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
       await db.$transaction(async (tx) => {
         for (const t of p.tasks as { taskId: string; status: string; blockedReason: string; reopenRequests: string[]; commitments: { memberId: string; taskId: string; weekStart: string }[] }[]) {
           const { count } = await tx.task.updateMany({
-            where: { id: t.taskId, ownerId: me.id, status: "done" },
+            where: { id: t.taskId, ...workingOn(me.id), status: "done" },
             data: { status: t.status, blockedReason: t.blockedReason, completedAt: null },
           });
           if (!count) continue;

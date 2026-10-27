@@ -12,10 +12,11 @@ import TaskPanel from "@/components/TaskPanel";
 import { PageHeader } from "@/components/shell";
 import { resetCalendarToken } from "../../actions";
 import { appUrl } from "@/lib/url";
+import { workingOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "Calendar · T4C Exec Hub" };
 
-type Item = { key: string; date: string; time: string | null; label: string; who?: string; href: string; tone: string; kind: string; done?: boolean };
+type Item = { key: string; date: string; time: string | null; label: string; href: string; tone: string; kind: string; done?: boolean };
 
 function timeLabel(t: string): string {
   const [h, m] = t.split(":").map(Number);
@@ -27,32 +28,24 @@ function timeLabel(t: string): string {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; week?: string; task?: string; subscribe?: string }>;
+  searchParams: Promise<{ week?: string; task?: string; subscribe?: string }>;
 }) {
   const me = await requireMember();
   const query = await searchParams;
   const today = todayISO();
-  const everyone = query.view === "all";
   const thisWeek = mondayOf(today);
   const week = isISODate(query.week) ? mondayOf(query.week) : thisWeek;
   const end = addDays(week, 6);
-  const link = (taskId: string | null) => withTask("/calendar", { view: query.view, week: query.week }, taskId);
-  const href = (v: string | null, w: string) => {
-    const p = new URLSearchParams();
-    if (v) p.set("view", v);
-    if (w !== thisWeek) p.set("week", w);
-    const qs = p.toString();
-    return qs ? `/calendar?${qs}` : "/calendar";
-  };
-  const view = everyone ? "all" : null;
+  const link = (taskId: string | null) => withTask("/calendar", { week: query.week }, taskId);
+  const href = (w: string) => (w === thisWeek ? "/calendar" : `/calendar?week=${w}`);
 
   const [tasks, projects, meetings] = await Promise.all([
     db.task.findMany({
-      where: { due: { gte: week, lte: end }, status: { not: "dropped" }, ...(everyone ? {} : { ownerId: me.id }) },
-      include: { owner: true, waitingOn: true, helpRequests: true },
+      where: { due: { gte: week, lte: end }, status: { not: "dropped" }, ...workingOn(me.id) },
+      include: { waitingOn: true, helpRequests: true },
       orderBy: { createdAt: "asc" },
     }),
-    db.project.findMany({ where: { status: "active", due: { gte: week, lte: end }, ...(everyone ? {} : { ownerId: me.id }) } }),
+    db.project.findMany({ where: { status: "active", due: { gte: week, lte: end }, ownerId: me.id } }),
     db.meeting.findMany({ where: { date: { gte: week, lte: end } } }),
   ]);
 
@@ -64,7 +57,6 @@ export default async function CalendarPage({
       date: t.due!,
       time: t.dueTime,
       label: t.title,
-      who: everyone ? (t.ownerId === me.id ? "You" : (t.owner?.name ?? "Up for grabs")) : undefined,
       href: link(t.id),
       tone: taskStatus(t, today).tone,
       kind: "Task",
@@ -94,14 +86,10 @@ export default async function CalendarPage({
         sub={formatWeek(week)}
         actions={
           <>
-            <div className="segmented" role="tablist" aria-label="Whose dates" style={{ minWidth: 180 }}>
-              <Link href={href(null, week)} className={`button small${everyone ? " secondary" : ""}`} role="tab" aria-selected={!everyone}>Mine</Link>
-              <Link href={href("all", week)} className={`button small${everyone ? "" : " secondary"}`} role="tab" aria-selected={everyone}>Everyone</Link>
-            </div>
             <nav className="row" aria-label="Change week" style={{ gap: 4 }}>
-              {week !== thisWeek && <Link href={href(view, thisWeek)} className="button secondary small">Today</Link>}
-              <Link href={href(view, addDays(week, -7))} className="icon-button" aria-label="Previous week" title="Previous week"><Icon name="left" /></Link>
-              <Link href={href(view, addDays(week, 7))} className="icon-button" aria-label="Next week" title="Next week"><Icon name="right" /></Link>
+              {week !== thisWeek && <Link href={href(thisWeek)} className="button secondary small">Today</Link>}
+              <Link href={href(addDays(week, -7))} className="icon-button" aria-label="Previous week" title="Previous week"><Icon name="left" /></Link>
+              <Link href={href(addDays(week, 7))} className="icon-button" aria-label="Next week" title="Next week"><Icon name="right" /></Link>
             </nav>
             <Menu>
               <a href="/calendar/download" className="menu-item"><Icon name="calendar" /> Download for Google Calendar (.ics)</a>
@@ -126,7 +114,6 @@ export default async function CalendarPage({
                 <Link key={it.key} href={it.href} scroll={false} className={`week-item tone-${it.tone}${it.done ? " done" : ""}`} title={`${it.kind}: ${it.label}`}>
                   <span className="when">{it.time ? timeLabel(it.time) : it.kind === "Task" ? "Due" : it.kind}</span>
                   <span className="what">{it.label}</span>
-                  {it.who && <span className="who">{it.who}</span>}
                 </Link>
               ))}
             </section>

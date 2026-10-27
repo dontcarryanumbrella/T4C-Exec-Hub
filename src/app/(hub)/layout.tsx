@@ -71,7 +71,7 @@ export default async function HubLayout({ children }: { children: React.ReactNod
           steps={[
             { target: ".new-button", title: "+ New adds anything", text: "Plan your week, start a project folder, propose an idea, take meeting notes, or send a shoutout." },
             { target: '.side-nav a[href="/"]', title: "This is your week", text: "Everyone's cards show what they're working on. Click any task to update it or ask for help." },
-            { target: '.side-nav a[href="/projects"]', title: "Folders hold the work", text: "One folder per role that never ends, plus a folder for each project with an end date." },
+            { target: '.side-nav a[href="/projects"]', title: "Folders hold the work", text: "General folders never end (one per role, plus any you add); projects have an end date." },
             { target: '.side-nav a[href="/calendar"]', title: "Calendar", text: "Every due date and meeting in one week view. You can sync it to your own calendar." },
             { target: '.side-nav a[href="/meetings"]', title: "Meetings", text: "Notes from each meeting, with the action items turned into tasks." },
             { target: '.side-nav a[href="/people"]', title: "People", text: "See what each exec is up to, who's online, and send a shoutout." },

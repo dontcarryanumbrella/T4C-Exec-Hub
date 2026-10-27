@@ -6,7 +6,6 @@ export const PERMISSIONS = [
   { key: "canApprove", label: "Approve or decline proposals" },
   { key: "canManageTasks", label: "Add, assign, and edit tasks in any project" },
   { key: "canWriteNotes", label: "Write meeting notes" },
-  { key: "canManageTemplates", label: "Manage templates" },
   { key: "canManageMembers", label: "Manage members and permissions" },
 ] as const;
 
@@ -19,7 +18,6 @@ const none: PermissionSet = {
   canApprove: false,
   canManageTasks: false,
   canWriteNotes: false,
-  canManageTemplates: false,
   canManageMembers: false,
 };
 
@@ -33,9 +31,9 @@ export function can(member: Partial<PermissionSet> | null | undefined, perm: Per
   return !!member?.[perm];
 }
 
-// The Admin tab is for anyone who manages people or templates.
+// The Admin tab is for anyone who manages people.
 export function seesAdmin(member: Partial<PermissionSet>): boolean {
-  return can(member, "canManageMembers") || can(member, "canManageTemplates");
+  return can(member, "canManageMembers");
 }
 
 // Matches a member's checkboxes to a preset name, for display.

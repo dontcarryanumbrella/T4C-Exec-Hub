@@ -7,7 +7,6 @@ import { can } from "@/lib/permissions";
 import { projectBrief } from "@/lib/status";
 import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
-import { Menu } from "@/components/Menu";
 import { FOLDERS } from "@/lib/folders";
 
 const FOLDER_ORDER = (title: string) => {
@@ -83,26 +82,12 @@ export default async function ProjectsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Folders"
-        actions={
-          <>
-            <Link href={canCreate ? "/projects/new" : "/projects/new?idea=1"} className="button">
-              {canCreate ? "New folder" : "Propose an idea"}
-            </Link>
-            <Menu>
-              {canCreate && can(me, "canPropose") && (
-                <Link href="/projects/new?idea=1" className="menu-item"><Icon name="idea" /> Propose an idea</Link>
-              )}
-              <Link href="/projects/templates" className="menu-item"><Icon name="task" /> Templates</Link>
-            </Menu>
-          </>
-        }
-      />
+      {/* Making things (projects, folders, ideas) lives in the sidebar's New menu. */}
+      <PageHeader title="Folders" />
 
-      {folders.length > 0 && (
+      {(folders.length > 0 || canCreate) && (
         <>
-          <div className="section-title"><h2>Roles</h2></div>
+          <div className="section-title"><h2>General</h2></div>
           <div className="folder-grid">
             {folders.map((f) => {
               const open = f.tasks.filter((t) => t.status !== "done" && t.status !== "dropped").length;
@@ -114,6 +99,13 @@ export default async function ProjectsPage() {
                 </Link>
               );
             })}
+            {canCreate && (
+              <Link href="/projects/new?kind=folder" className="folder-tile folder-tile-new">
+                <Icon name="plus" size={22} />
+                <span className="folder-name">New general folder</span>
+                <span className="folder-meta">An area that never ends</span>
+              </Link>
+            )}
           </div>
           <div className="section-title"><h2>Projects</h2></div>
         </>
@@ -122,14 +114,14 @@ export default async function ProjectsPage() {
       {active.length === 0 && proposed.length === 0 ? (
         <div className="empty-state">
           <Icon name="folder" size={44} />
-          <p>No project folders yet.</p>
+          <p>No projects yet.</p>
           <Link href={canCreate ? "/projects/new" : "/projects/new?idea=1"} className="button">
             {canCreate ? "Start the first one" : "Propose the first one"}
           </Link>
         </div>
       ) : (
         <>
-          <ProjectList rows={active.map(row)} emptyText="No active project folders." />
+          <ProjectList rows={active.map(row)} emptyText="No active projects." />
 
           {proposed.length > 0 && (
             <>
