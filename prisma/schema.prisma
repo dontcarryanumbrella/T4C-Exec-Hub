@@ -47,6 +47,7 @@ model Member {
   ownedTasks     Task[]        @relation("TaskOwner")
   assignedTasks  Task[]        @relation("TaskAssigner")
   coOwnedTasks   Task[]        @relation("TaskCoOwners")
+  coOwnedProjects Project[]    @relation("ProjectCoOwners")
   meetings       Meeting[]
   notifications  Notification[] @relation("NotifyTo")
   sentPings      Notification[] @relation("NotifyFrom")
@@ -93,6 +94,8 @@ model Project {
   due          String? // YYYY-MM-DD
   ownerId      String?
   owner        Member?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  // Others who share it with the owner (e.g. President and VP on Club Operations).
+  coOwners     Member[]  @relation("ProjectCoOwners")
   proposedById String?
   proposedBy   Member?   @relation("ProjectProposer", fields: [proposedById], references: [id], onDelete: SetNull)
   createdAt    DateTime  @default(now())

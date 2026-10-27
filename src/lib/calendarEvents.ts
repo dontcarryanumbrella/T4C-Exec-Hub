@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { MINUTES, type FeedEvent } from "./calendar";
 import { addDays, mondayOf, todayISO } from "./dates";
-import { workingOn } from "./tasks";
+import { leading, workingOn } from "./tasks";
 
 // Everything that belongs in one person's calendar: tasks they're on (with a
 // date), deadlines of projects they own, all exec meetings, and (for execs)
@@ -13,7 +13,7 @@ export async function eventsFor(memberId: string): Promise<FeedEvent[]> {
       where: { ...workingOn(memberId), due: { not: null }, status: { not: "dropped" } },
       include: { project: true },
     }),
-    db.project.findMany({ where: { ownerId: memberId, status: "active", due: { not: null } } }),
+    db.project.findMany({ where: { ...leading(memberId), status: "active", due: { not: null } } }),
     db.meeting.findMany(),
   ]);
   // Execs check in every Sunday; one repeating event covers every week.

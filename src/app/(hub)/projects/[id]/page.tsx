@@ -7,7 +7,7 @@ import { formatDay, todayISO } from "@/lib/dates";
 import { projectBrief } from "@/lib/status";
 import { can } from "@/lib/permissions";
 import AssigneePicker from "@/components/AssigneePicker";
-import { pickable } from "@/lib/tasks";
+import { leadsProject, pickable } from "@/lib/tasks";
 import { Assignees } from "@/components/bits";
 import { AvatarStack } from "@/components/AvatarStack";
 import { isBuiltInFolder } from "@/lib/folders";
@@ -52,6 +52,7 @@ export default async function ProjectPage({
     where: { id },
     include: {
       owner: true,
+      coOwners: { orderBy: { name: "asc" } },
       proposedBy: true,
       tasks: { include: { owner: true, coOwners: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
       links: { orderBy: { createdAt: "asc" } },
@@ -65,10 +66,11 @@ export default async function ProjectPage({
   ]);
   const isExec = me.kind === "exec";
   const isFolder = project.kind === "folder";
-  const manages = can(me, "canManageTasks") || project.ownerId === me.id;
+  const leads = leadsProject(project, me.id);
+  const manages = can(me, "canManageTasks") || leads;
   const canEdit = (manages || can(me, "canCreateProjects")) && (project.status === "active" || project.status === "done");
   const canDelete =
-    !isBuiltInFolder(project) && (project.ownerId === me.id || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id));
+    !isBuiltInFolder(project) && (leads || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id));
   const back = link(query.task ?? null);
   const finished = (s: string) => s === "done" || s === "dropped";
   const brief = projectBrief(project.tasks, today);
@@ -97,6 +99,7 @@ export default async function ProjectPage({
       <input type="hidden" name="goal" value={project.goal} />
       <input type="hidden" name="due" value={project.due ?? ""} />
       <input type="hidden" name="ownerId" value={project.ownerId ?? ""} />
+      {project.coOwners.map((c) => <input key={c.id} type="hidden" name="coOwnerId" value={c.id} />)}
     </>
   );
 
@@ -108,7 +111,7 @@ export default async function ProjectPage({
         sub={
           <>
             {isFolder ? "General folder" : ({ proposed: "Idea", done: "Done", declined: "Not now" }[project.status] ?? "Active")}
-            {project.owner && ` · ${project.ownerId === me.id ? "You own this" : project.owner.name}`}
+            {project.owner && <> · {project.ownerId === me.id && !project.coOwners.length ? "You own this" : <Assignees task={project} meId={me.id} size={20} />}</>}
             {project.due && ` · Due ${formatDay(project.due)}`}
             {project.proposedBy && ` · Idea by ${project.proposedBy.id === me.id ? "you" : project.proposedBy.name}`}
           </>
@@ -157,12 +160,16 @@ export default async function ProjectPage({
           <label>Name<input type="text" name="title" defaultValue={project.title} maxLength={160} /></label>
           <label>Goal<input type="text" name="goal" defaultValue={project.goal} maxLength={300} /></label>
           <div className="grid2">
-            <label>
-              Owner
-              <select name="ownerId" defaultValue={project.ownerId ?? ""}>
-                {execs.map((m) => <option key={m.id} value={m.id}>{m.id === me.id ? "You" : m.name}</option>)}
-              </select>
-            </label>
+            <div>
+              <span className="field-label">Owners</span>
+              <AssigneePicker
+                people={pickable(execs)}
+                meId={me.id}
+                initial={project.ownerId ? [project.ownerId, ...project.coOwners.map((c) => c.id)] : [me.id]}
+                allowNone={false}
+                label="Owners"
+              />
+            </div>
             <label>Due<input type="date" name="due" defaultValue={project.due ?? ""} /></label>
           </div>
           <div className="row">
@@ -198,7 +205,7 @@ export default async function ProjectPage({
         ) : (
           <div className="notice">Waiting for an approver. Add thoughts in the discussion below.</div>
         ))}
-      {project.status === "done" && (project.ownerId === me.id || project.tasks.some((t) => t.ownerId === me.id && t.status === "done")) && (
+      {project.status === "done" && (leads || project.tasks.some((t) => t.ownerId === me.id && t.status === "done")) && (
         <div className="notice notice-success">Done! <Link href={`/people/${me.id}`}>Add it to your profile →</Link></div>
       )}
 

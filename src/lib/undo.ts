@@ -141,6 +141,7 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
       break;
     case "project.fields":
       await db.project.updateMany({ where: { id: p.id }, data: p.prev });
+      if (p.prevCoOwners) await db.project.update({ where: { id: p.id }, data: { coOwners: { set: (p.prevCoOwners as string[]).map((id) => ({ id })) } } });
       break;
     case "member.fields":
     case "member.perms":

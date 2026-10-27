@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import CheckInForm from "./CheckInForm";
 import { PageHeader } from "@/components/shell";
 import { DEFAULT_FOLDER } from "@/lib/folders";
-import { workingOn } from "@/lib/tasks";
+import { leadsProject, workingOn } from "@/lib/tasks";
 
 export const metadata: Metadata = { title: "Check in · T4C Exec Hub" };
 
@@ -33,7 +33,7 @@ export default async function CheckInPage({ searchParams }: { searchParams: Prom
       where: { ...workingOn(me.id), status: { notIn: ["done", "dropped"] } },
       include: { project: true, assignedBy: true }, orderBy: [{ due: "asc" }, { createdAt: "asc" }],
     }),
-    db.project.findMany({ where: { status: "active" }, orderBy: [{ kind: "desc" }, { title: "asc" }] }),
+    db.project.findMany({ where: { status: "active" }, include: { coOwners: { select: { id: true } } }, orderBy: [{ kind: "desc" }, { title: "asc" }] }),
     db.checkIn.findUnique({ where: { memberId_weekStart: { memberId: me.id, weekStart: week } } }),
     db.task.findMany({
       where: { ownerId: null, status: { notIn: ["done", "dropped"] } },
@@ -68,7 +68,7 @@ export default async function CheckInPage({ searchParams }: { searchParams: Prom
         }))}
         upForGrabs={upForGrabs.map((t) => ({ id: t.id, title: t.title, project: t.project?.title ?? null, due: t.due }))}
         projects={projects.map((p) => ({ id: p.id, title: p.title, folder: p.kind === "folder" }))}
-        defaultProject={(projects.find((p) => p.kind === "folder" && p.ownerId === me.id) ?? projects.find((p) => p.kind === "folder" && p.title === DEFAULT_FOLDER))?.id ?? ""}
+        defaultProject={(projects.find((p) => p.kind === "folder" && leadsProject(p, me.id)) ?? projects.find((p) => p.kind === "folder" && p.title === DEFAULT_FOLDER))?.id ?? ""}
         isUpdate={!!existing}
       />
     </div>

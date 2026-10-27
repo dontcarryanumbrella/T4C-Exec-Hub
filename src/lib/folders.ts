@@ -3,7 +3,7 @@
 // role responsible for it. Kept in sync with prisma/seed.mjs.
 export const FOLDERS = [
   { title: "Club Operations", role: "President", goal: "Running the club: meetings, logistics, and anything that doesn't fit elsewhere." },
-  { title: "Recruitment & Onboarding", role: "Vice President", goal: "Bringing in new members and getting them started." },
+
   { title: "Events & Programming", role: "Director of Programming", goal: "Speaker events, workshops, and socials." },
   { title: "Partnerships & Outreach", role: "Director of Partnerships & External Relations", goal: "Sponsors, partner orgs, and speakers." },
   { title: "Internal Comms", role: "Director of Internal Communications", goal: "Newsletters, announcements, and member updates." },

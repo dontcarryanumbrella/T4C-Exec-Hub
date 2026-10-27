@@ -8,6 +8,7 @@ import { projectBrief } from "@/lib/status";
 import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
 import { FOLDERS } from "@/lib/folders";
+import { peopleOn } from "@/lib/tasks";
 
 const FOLDER_ORDER = (title: string) => {
   const i = FOLDERS.findIndex((f) => f.title === title);
@@ -54,7 +55,7 @@ export default async function ProjectsPage() {
   const today = todayISO();
   const canCreate = can(me, "canCreateProjects");
   const projects = await db.project.findMany({
-    include: { owner: true, proposedBy: true, tasks: { include: { waitingOn: true, helpRequests: true } } },
+    include: { owner: true, coOwners: { orderBy: { name: "asc" } }, proposedBy: true, tasks: { include: { waitingOn: true, helpRequests: true } } },
     orderBy: [{ due: "asc" }, { createdAt: "desc" }],
   });
   const who = (m: { id: string; name: string } | null) => (m ? (m.id === me.id ? "You" : m.name) : "—");
@@ -64,7 +65,7 @@ export default async function ProjectsPage() {
     return {
       id: p.id,
       title: p.title,
-      owner: who(p.owner),
+      owner: peopleOn(p, me.id, "—"),
       due: p.due ? formatDay(p.due) : "—",
       where: (
         <>

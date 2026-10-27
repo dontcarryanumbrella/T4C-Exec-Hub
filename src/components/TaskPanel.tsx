@@ -4,7 +4,7 @@ import { activeWeek, addDays, formatDay, todayISO } from "@/lib/dates";
 import { dependents } from "@/lib/guards";
 import { can, type PermissionSet } from "@/lib/permissions";
 import { googleCalendarUrl } from "@/lib/calendar";
-import { copiesOf, isOnTask, pickable } from "@/lib/tasks";
+import { copiesOf, isOnTask, leadsProject, pickable } from "@/lib/tasks";
 import AssigneePicker from "./AssigneePicker";
 import { AvatarStack } from "./AvatarStack";
 import { Assignees, CommentBody, StatusText } from "./bits";
@@ -44,7 +44,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
     include: {
       owner: true,
       coOwners: { orderBy: { name: "asc" } },
-      project: true,
+      project: { include: { coOwners: { select: { id: true } } } },
       waitingOn: true,
       assignedBy: true,
       meeting: true,
@@ -58,7 +58,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
   if (!task) return null;
 
   const today = todayISO();
-  const manages = can(me, "canManageTasks") || (!!task.project && task.project.ownerId === me.id);
+  const manages = can(me, "canManageTasks") || leadsProject(task.project, me.id);
   const onIt = isOnTask(task, me.id);
   const canEdit = onIt || manages;
   const isOwner = task.ownerId === me.id;

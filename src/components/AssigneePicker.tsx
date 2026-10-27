@@ -17,6 +17,7 @@ export default function AssigneePicker({
   initial = [],
   allowEveryone = false,
   initialEveryone = false,
+  allowNone = true,
   label = "Assign to",
 }: {
   people: Person[];
@@ -24,6 +25,8 @@ export default function AssigneePicker({
   initial?: string[];
   allowEveryone?: boolean;
   initialEveryone?: boolean;
+  // false for things that always need someone, like a folder's owners.
+  allowNone?: boolean;
   label?: string;
 }) {
   const [everyone, setEveryone] = useState(initialEveryone);
@@ -42,7 +45,7 @@ export default function AssigneePicker({
           : `${first(chosen[0])} + ${chosen.length - 1} others`;
   const toggle = (id: string) => {
     setEveryone(false);
-    setPicked((now) => (now.includes(id) ? now.filter((x) => x !== id) : [...now, id]));
+    setPicked((now) => (now.includes(id) ? (now.length === 1 && !allowNone ? now : now.filter((x) => x !== id)) : [...now, id]));
   };
 
   return (
@@ -67,15 +70,17 @@ export default function AssigneePicker({
         }
       >
         <div className="picker-list">
-          <button type="button" className={`menu-item${!chosen.length && !everyone ? " on" : ""}`} onClick={() => { setPicked([]); setEveryone(false); }}>
-            Up for grabs
-          </button>
+          {allowNone && (
+            <button type="button" className={`menu-item${!chosen.length && !everyone ? " on" : ""}`} onClick={() => { setPicked([]); setEveryone(false); }}>
+              Up for grabs
+            </button>
+          )}
           {allowEveryone && (
             <button type="button" className={`menu-item${everyone ? " on" : ""}`} onClick={() => { setPicked([]); setEveryone(true); }}>
               Everyone <span className="muted small">· each gets their own copy</span>
             </button>
           )}
-          <div className="menu-sep" />
+          {(allowNone || allowEveryone) && <div className="menu-sep" />}
           {people.map((p) => {
             const at = picked.indexOf(p.id);
             return (
@@ -87,7 +92,7 @@ export default function AssigneePicker({
               </label>
             );
           })}
-          <p className="small muted picker-hint">The first person you pick owns it; others work on it with them.</p>
+          <p className="small muted picker-hint">{allowNone ? "The first person you pick owns it; others work on it with them." : "The first person you pick is the main owner; the rest share it."}</p>
         </div>
       </Menu>
     </div>

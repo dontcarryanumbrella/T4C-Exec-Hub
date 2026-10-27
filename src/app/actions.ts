@@ -30,7 +30,7 @@ import { xpFor, xpNote } from "@/lib/xp";
 import { AVATAR_COLORS, AVATAR_EXTRAS, AVATAR_FACES, AVATAR_SHAPES } from "@/lib/avatar";
 import { DEFAULT_FOLDER, isBuiltInFolder } from "@/lib/folders";
 import { joinWeek, moveCommitments, MAX_COMMITMENTS } from "@/lib/commitments";
-import { copiesOf, isOnTask, workingOn } from "@/lib/tasks";
+import { copiesOf, isOnTask, leading, leadsProject, workingOn } from "@/lib/tasks";
 
 // Three commitments is the target that keeps priorities credible; people can
 // take on more when they choose to, up to a sanity cap.
@@ -62,10 +62,10 @@ function optTime(fd: FormData, key: string): string | null {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null;
 }
 
-// Where a task goes when no project was picked: the folder you own, or
+// Where a task goes when no project was picked: a folder you own, or
 // Club Operations.
 async function homeFolder(memberId: string): Promise<string | null> {
-  const mine = await db.project.findFirst({ where: { kind: "folder", ownerId: memberId }, select: { id: true } });
+  const mine = await db.project.findFirst({ where: { kind: "folder", ...leading(memberId) }, select: { id: true } });
   if (mine) return mine.id;
   const ops = await db.project.findFirst({ where: { kind: "folder", title: DEFAULT_FOLDER }, select: { id: true } });
   return ops?.id ?? null;
@@ -115,10 +115,10 @@ async function taskForEdit(taskId: string) {
   const me = await requireMember();
   const task = await db.task.findUnique({
     where: { id: taskId },
-    include: { project: { select: { ownerId: true } }, coOwners: { select: { id: true } } },
+    include: { project: { select: { ownerId: true, coOwners: { select: { id: true } } } }, coOwners: { select: { id: true } } },
   });
   if (!task) throw new Error("That task no longer exists.");
-  const manages = can(me, "canManageTasks") || (!!task.project && task.project.ownerId === me.id);
+  const manages = can(me, "canManageTasks") || leadsProject(task.project, me.id);
   const canEdit = isOnTask(task, me.id) || manages;
   return { me, task, canEdit, manages };
 }
@@ -535,27 +535,33 @@ export async function declineProposal(fd: FormData) {
 
 export async function updateProject(fd: FormData) {
   const me = await requireMember();
-  const project = await db.project.findUnique({ where: { id: str(fd, "projectId") } });
+  const project = await db.project.findUnique({ where: { id: str(fd, "projectId") }, include: { coOwners: { select: { id: true } } } });
   if (!project) throw new Error("That project no longer exists.");
-  if (project.ownerId !== me.id && !can(me, "canManageTasks") && !can(me, "canCreateProjects")) forbid();
+  if (!leadsProject(project, me.id) && !can(me, "canManageTasks") && !can(me, "canCreateProjects")) forbid();
   const status = str(fd, "status");
   const wanted = str(fd, "ownerId");
+  const ownerId = (await memberExists(wanted)) ? wanted : project.ownerId;
+  const prevCoOwners = project.coOwners.map((c) => c.id);
   const next = {
     title: str(fd, "title") || project.title,
     goal: str(fd, "goal", LIMIT.text),
     due: optDate(fd, "due"),
-    ownerId: (await memberExists(wanted)) ? wanted : project.ownerId,
+    ownerId,
     // Proposals change status only through approve/decline.
     status:
       project.kind !== "folder" && ["active", "done"].includes(status) && ["active", "done"].includes(project.status) ? status : project.status,
   };
-  await db.project.update({ where: { id: project.id }, data: next });
+  const coOwnerIds = await coOwnersFor(fd, ownerId);
+  await db.project.update({ where: { id: project.id }, data: { ...next, coOwners: { set: coOwnerIds.map((id) => ({ id })) } } });
+  for (const id of coOwnerIds.filter((id) => !prevCoOwners.includes(id) && id !== me.id)) {
+    await notify(id, me.id, `${me.name} added you as an owner of “${next.title}”.`, `/projects/${project.id}`);
+  }
   const finished = next.status === "done" && project.status !== "done";
   await tell(me, finished ? `“${next.title}” is marked done. Nice work!` : "Project saved.", {
     undo: {
       kind: "project.fields",
       label: "those project changes",
-      payload: { id: project.id, prev: { title: project.title, goal: project.goal, due: project.due, ownerId: project.ownerId, status: project.status } },
+      payload: { id: project.id, prev: { title: project.title, goal: project.goal, due: project.due, ownerId: project.ownerId, status: project.status }, prevCoOwners },
     },
     next: finished ? { label: "Add it to your profile", href: `/people/${me.id}` } : undefined,
   });
@@ -566,11 +572,11 @@ export async function updateProject(fd: FormData) {
 // built-in general folders (one per role) can't be deleted.
 export async function deleteProject(fd: FormData) {
   const me = await requireMember();
-  const project = await db.project.findUnique({ where: { id: str(fd, "projectId") }, include: { _count: { select: { tasks: true } } } });
+  const project = await db.project.findUnique({ where: { id: str(fd, "projectId") }, include: { coOwners: { select: { id: true } }, _count: { select: { tasks: true } } } });
   if (!project) redirect("/projects");
   if (isBuiltInFolder(project)) forbid();
   const mayDelete =
-    project.ownerId === me.id || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id);
+    leadsProject(project, me.id) || can(me, "canCreateProjects") || (project.status === "proposed" && project.proposedById === me.id);
   if (!mayDelete) forbid();
   await db.project.delete({ where: { id: project.id } });
   const n = project._count.tasks;
@@ -588,9 +594,9 @@ export async function createTask(fd: FormData) {
   const title = str(fd, "title");
   const projectId = str(fd, "projectId");
   if (!title) return refuse(fd, "Write the task's outcome first.");
-  const project = projectId ? await db.project.findUnique({ where: { id: projectId } }) : null;
+  const project = projectId ? await db.project.findUnique({ where: { id: projectId }, include: { coOwners: { select: { id: true } } } }) : null;
   if (projectId && (!project || project.status !== "active")) forbid();
-  const manages = can(me, "canManageTasks") || project?.ownerId === me.id;
+  const manages = can(me, "canManageTasks") || leadsProject(project, me.id);
   const owners = manages ? await ownersFor(str(fd, "ownerId"), me) : [me.id];
   // Everyone gets separate copies, so extra people only apply to a single task.
   const coOwnerIds = manages && owners.length === 1 ? await coOwnersFor(fd, owners[0]) : [];
@@ -979,7 +985,7 @@ export async function removeLink(fd: FormData) {
   const me = await requireMember();
   const link = await db.link.findUnique({
     where: { id: str(fd, "linkId") },
-    include: { task: { include: { project: true } }, project: true },
+    include: { task: { include: { project: { include: { coOwners: { select: { id: true } } } } } }, project: { include: { coOwners: { select: { id: true } } } } },
   });
   if (link) {
     // The person who added it, the task or project owner, or a task manager.
@@ -987,8 +993,8 @@ export async function removeLink(fd: FormData) {
       can(me, "canManageTasks") ||
       link.addedById === me.id ||
       link.task?.ownerId === me.id ||
-      link.task?.project?.ownerId === me.id ||
-      link.project?.ownerId === me.id;
+      leadsProject(link.task?.project, me.id) ||
+      leadsProject(link.project, me.id);
     if (!allowed) forbid();
     await db.link.delete({ where: { id: link.id } });
     const { task: _t, project: _p, ...data } = link;

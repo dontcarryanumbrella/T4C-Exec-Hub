@@ -34,7 +34,7 @@ console.log(`Seeded ${roster.length} members.`);
 // Standing folders (mirrors src/lib/folders.ts): one per area, owned by its role.
 const FOLDERS = [
   ["Club Operations", "President", "Running the club: meetings, logistics, and anything that doesn't fit elsewhere."],
-  ["Recruitment & Onboarding", "Vice President", "Bringing in new members and getting them started."],
+
   ["Events & Programming", "Director of Programming", "Speaker events, workshops, and socials."],
   ["Partnerships & Outreach", "Director of Partnerships & External Relations", "Sponsors, partner orgs, and speakers."],
   ["Internal Comms", "Director of Internal Communications", "Newsletters, announcements, and member updates."],
