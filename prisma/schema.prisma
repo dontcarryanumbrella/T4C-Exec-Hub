@@ -209,6 +209,9 @@ model Link {
   task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // A meeting's notes doc, slides, and the like.
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 
@@ -236,6 +239,7 @@ model Meeting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   tasks       Task[]
+  links       Link[]
 }
 
 // The last few things each person did that can be taken back. Undo looks

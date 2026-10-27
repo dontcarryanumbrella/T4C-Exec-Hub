@@ -921,7 +921,10 @@ export async function addLink(fd: FormData) {
     ok = ["http:", "https:"].includes(new URL(url).protocol);
   } catch {}
   if (!ok) return refuse(fd, "That doesn't look like a web link. Paste the full address, starting with https://");
-  const link = await db.link.create({ data: { url, title: str(fd, "title") || url.slice(0, LIMIT.title), addedById: me.id, ...(await attachTarget(fd)) } });
+  const meetingId = str(fd, "meetingId");
+  if (meetingId && !(await db.meeting.count({ where: { id: meetingId } }))) forbid();
+  const target = meetingId ? { meetingId } : await attachTarget(fd);
+  const link = await db.link.create({ data: { url, title: str(fd, "title") || url.slice(0, LIMIT.title), addedById: me.id, ...target } });
   await tell(me, `Link added: ${link.title}.`, { undo: { kind: "link.add", label: "adding that link", payload: { id: link.id } } });
   done(fd);
 }
@@ -933,10 +936,12 @@ export async function removeLink(fd: FormData) {
     include: { task: { include: { project: { include: { coOwners: { select: { id: true } } } } } }, project: { include: { coOwners: { select: { id: true } } } } },
   });
   if (link) {
-    // The person who added it, the task or project owner, or a task manager.
+    // The person who added it, the task or project owner, a task manager, or
+    // (for a meeting's links) anyone who writes meeting notes.
     const allowed =
       can(me, "canManageTasks") ||
       link.addedById === me.id ||
+      (!!link.meetingId && can(me, "canWriteNotes")) ||
       link.task?.ownerId === me.id ||
       leadsProject(link.task?.project, me.id) ||
       leadsProject(link.project, me.id);

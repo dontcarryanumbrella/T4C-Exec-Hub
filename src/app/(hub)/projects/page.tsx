@@ -26,8 +26,9 @@ type Row = {
 };
 
 // Drive-style list: click a row to open it; nothing else to read or press.
-function ProjectList({ rows, emptyText }: { rows: Row[]; emptyText: string }) {
-  if (rows.length === 0) return <p className="muted small" style={{ padding: "8px 12px" }}>{emptyText}</p>;
+// `newRow` adds a last row that starts a new one, like the folder tiles do.
+function ProjectList({ rows, emptyText, newRow }: { rows: Row[]; emptyText: string; newRow?: React.ReactNode }) {
+  if (rows.length === 0 && !newRow) return <p className="muted small" style={{ padding: "8px 12px" }}>{emptyText}</p>;
   return (
     <div className="list">
       <div className="list-head cols-project">
@@ -46,6 +47,7 @@ function ProjectList({ rows, emptyText }: { rows: Row[]; emptyText: string }) {
           <span className="row-actions"><Icon name="right" /></span>
         </Link>
       ))}
+      {newRow}
     </div>
   );
 }
@@ -122,7 +124,16 @@ export default async function ProjectsPage() {
         </div>
       ) : (
         <>
-          <ProjectList rows={active.map(row)} emptyText="No active projects." />
+          <ProjectList
+            rows={active.map(row)}
+            emptyText="No active projects."
+            newRow={canCreate && (
+              <Link href="/projects/new" className="list-row cols-project list-row-new">
+                <span className="name"><Icon name="plus" /><span>New project</span></span>
+                <span className="cell optional muted">Has an end date</span>
+              </Link>
+            )}
+          />
 
           {proposed.length > 0 && (
             <>
