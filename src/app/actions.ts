@@ -633,22 +633,29 @@ export async function createTask(fd: FormData) {
 export async function updateTask(fd: FormData) {
   const { me, task, canEdit, manages } = await taskForEdit(str(fd, "taskId"));
   if (!canEdit) forbid();
-  // A task given to Everyone can be renamed or rescheduled for every copy at
-  // once. Each person keeps their own owner and status.
-  const copies = manages && task.ownerId && str(fd, "everyone") === "yes"
-    ? await db.task.findMany({ where: copiesOf(task), select: { id: true, title: true, description: true, due: true, dueTime: true } })
-    : [];
   const status = TASK_STATUSES.includes(str(fd, "status")) ? str(fd, "status") : task.status;
   const wanted = str(fd, "ownerId");
+  // Saved as Everyone (managers only): every copy gets the new name,
+  // description, and dates, and any exec without a copy gets one. Each person
+  // keeps their own status. An unowned task becomes the saver's copy.
+  const forEveryone = manages && wanted === EVERYONE && (!!task.ownerId || me.kind === "exec");
   // Owners can hand a task to someone or release it; both count as assigning.
-  const ownerId = wanted === OPEN ? null : (await memberExists(wanted)) ? wanted : task.ownerId;
+  const ownerId = forEveryone ? (task.ownerId ?? me.id)
+    : wanted === OPEN ? null : (await memberExists(wanted)) ? wanted : task.ownerId;
   const reassigned = ownerId !== task.ownerId;
+  const copies = forEveryone
+    ? await db.task.findMany({ where: copiesOf(task), select: { id: true, ownerId: true, title: true, description: true, due: true, dueTime: true } })
+    : [];
+  const missing = forEveryone
+    ? (await db.member.findMany({ where: { kind: "exec", id: { notIn: [ownerId!, ...copies.map((c) => c.ownerId!)] } }, select: { id: true } })).map((m) => m.id)
+    : [];
   const prevCoOwners = task.coOwners.map((c) => c.id);
-  const coOwnerIds = await coOwnersFor(fd, ownerId);
+  const coOwnerIds = forEveryone ? prevCoOwners : await coOwnersFor(fd, ownerId);
   const addedCoOwners = coOwnerIds.filter((id) => !prevCoOwners.includes(id));
   const due = optDate(fd, "due");
   const waitingOnId = await validWaitingOn(task.id, str(fd, "waitingOnId"), task.projectId);
-  let result: { commitments?: Awaited<ReturnType<typeof moveCommitments>>; onCard: boolean };
+  const shared = { title: str(fd, "title") || task.title, description: str(fd, "description", LIMIT.text), due, dueTime: optTime(fd, "dueTime") };
+  let result: { commitments?: Awaited<ReturnType<typeof moveCommitments>>; onCard: boolean; created: string[] };
   try {
     result = await db.$transaction(async (tx) => {
       await tx.task.update({
@@ -667,16 +674,20 @@ export async function updateTask(fd: FormData) {
           completedAt: status === "done" ? (task.completedAt ?? new Date()) : null,
         },
       });
-      if (copies.length) {
-        await tx.task.updateMany({
-          where: { id: { in: copies.map((c) => c.id) } },
-          data: { title: str(fd, "title") || task.title, description: str(fd, "description", LIMIT.text), due, dueTime: optTime(fd, "dueTime") },
+      if (copies.length) await tx.task.updateMany({ where: { id: { in: copies.map((c) => c.id) } }, data: shared });
+      // New copies share the original's creation time, so they stay grouped with it.
+      const created: string[] = [];
+      for (const id of missing) {
+        const copy = await tx.task.create({
+          data: { ...shared, projectId: task.projectId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
         });
+        created.push(copy.id);
+        await joinWeek(id, copy.id, due, tx);
       }
       const commitments = reassigned ? await moveCommitments(tx, task.id, ownerId) : undefined;
       const onCard = reassigned && status !== "done" && status !== "dropped"
         ? await joinWeek(ownerId, task.id, due, tx) : false;
-      return { commitments, onCard };
+      return { commitments, onCard, created };
     });
   } catch (err) {
     // Someone handed the task to another person while this form was open.
@@ -690,13 +701,25 @@ export async function updateTask(fd: FormData) {
   for (const id of addedCoOwners) {
     if (id !== me.id) await notify(id, me.id, `${me.name} added you to “${task.title}”.`, `/?task=${task.id}`);
   }
+  for (const [i, id] of missing.entries()) {
+    if (id !== me.id) await notify(id, me.id, `${me.name} gave you “${shared.title}”.`, `/?task=${result.created[i]}`);
+  }
   const handed = reassigned
     ? ownerId ? ` ${ownerId === me.id ? "You own it now" : `${await nameOf(ownerId)} owns it now`}. ${cardPlacement(Number(result.onCard), 1)}`
       : " It's up for grabs now and off the previous owner's current and future cards."
     : "";
-  const forAll = copies.length ? ` Everyone's copy (${copies.length + 1}) got the same name, description, and due date.` : "";
-  await tell(me, `Saved.${forAll}${handed}`, {
-    undo: { kind: "task.fields", label: "those task changes", payload: { taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), prevCoOwners, copies, commitments: result.commitments } },
+  const forAll = forEveryone
+    ? ` Saved for everyone (${copies.length + missing.length + 1} people)${missing.length ? `, including ${missing.length} new cop${missing.length === 1 ? "y" : "ies"} for people who didn't have one` : ""}.`
+    : "";
+  await tell(me, `Saved.${forAll}${forEveryone ? "" : handed}`, {
+    undo: {
+      kind: "task.fields",
+      label: "those task changes",
+      payload: {
+        taskId: task.id, ownerAfter: ownerId, prev: snapshotTask(task), prevCoOwners,
+        copies: copies.map(({ ownerId: _, ...c }) => c), createdCopies: result.created, commitments: result.commitments,
+      },
+    },
   });
   done(fd);
 }

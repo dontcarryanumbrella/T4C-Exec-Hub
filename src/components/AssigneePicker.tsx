@@ -16,16 +16,18 @@ export default function AssigneePicker({
   meId,
   initial = [],
   allowEveryone = false,
+  initialEveryone = false,
   label = "Assign to",
 }: {
   people: Person[];
   meId: string;
   initial?: string[];
   allowEveryone?: boolean;
+  initialEveryone?: boolean;
   label?: string;
 }) {
-  const [picked, setPicked] = useState<string[]>(initial);
-  const [everyone, setEveryone] = useState(false);
+  const [everyone, setEveryone] = useState(initialEveryone);
+  const [picked, setPicked] = useState<string[]>(initialEveryone ? [] : initial);
   const byId = new Map(people.map((p) => [p.id, p]));
   const chosen = picked.map((id) => byId.get(id)).filter((p): p is Person => !!p);
   const first = (p: Person) => (p.id === meId ? "You" : p.name.split(/\s+/)[0]);

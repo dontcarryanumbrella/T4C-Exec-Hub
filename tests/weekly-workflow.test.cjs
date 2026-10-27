@@ -415,10 +415,14 @@ test("renaming an Everyone task can update every copy, and Undo puts them all ba
     task("other", { title: "feedback?", projectId: "p", ownerId: "b", createdAt: new Date("2026-10-01T12:00:00Z") }),
   );
   f.state.member[0].canManageTasks = true;
-  await redirected(() => f.actions.updateTask(form({ taskId: "mine", ownerId: "a", title: "Site feedback", everyone: "yes" })), "/");
-  assert.deepEqual(f.state.task.map((t) => t.title), ["Site feedback", "Site feedback", "feedback?"]);
+  f.state.member.push({ id: "c", name: "Casey", kind: "exec" });
+  await redirected(() => f.actions.updateTask(form({ taskId: "mine", ownerId: "everyone", title: "Site feedback" })), "/");
+  assert.deepEqual(f.state.task.map((t) => t.title), ["Site feedback", "Site feedback", "feedback?", "Site feedback"]);
+  assert.equal(f.state.task[0].ownerId, "a");
   assert.equal(f.state.task[1].status, "done");
   assert.equal(f.state.task[1].ownerId, "b");
+  // Casey joined after the task went out, so saving as Everyone gives them a copy.
+  assert.equal(f.state.task[3].ownerId, "c");
   const undoId = f.state.undoEntry.at(-1).id;
   await redirected(() => f.actions.undo(form({ undoId })), "/");
   assert.deepEqual(f.state.task.map((t) => t.title), ["feedback?", "feedback?", "feedback?"]);

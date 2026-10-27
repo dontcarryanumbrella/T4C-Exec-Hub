@@ -46,7 +46,7 @@ p { margin: 0 0 8px; }
 
 /* Forms */
 input, select, textarea, button { font: inherit; color: inherit; }
-input[type="text"], input[type="email"], input[type="date"], input[type="url"], select, textarea {
+input[type="text"], input[type="email"], input[type="date"], input[type="time"], input[type="url"], select, textarea {
   border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; background: #fff;
   transition: border-color .15s, box-shadow .15s;
 }

@@ -52,6 +52,7 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
         for (const { id, ...prev } of (p.copies ?? []) as { id: string; title: string; description: string; due: string | null; dueTime: string | null }[]) {
           await tx.task.updateMany({ where: { id }, data: prev });
         }
+        if (p.createdCopies?.length) await tx.task.deleteMany({ where: { id: { in: p.createdCopies } } });
         if (p.commitments) {
           const week = activeWeek();
           await tx.commitment.deleteMany({ where: { taskId: p.taskId, weekStart: { gte: week } } });

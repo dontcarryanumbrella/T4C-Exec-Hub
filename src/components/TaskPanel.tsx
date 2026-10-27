@@ -381,15 +381,20 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
               <input type="hidden" name="blockedReason" value={task.blockedReason} />
               <label>Outcome<input type="text" name="title" defaultValue={task.title} maxLength={160} /></label>
               <label>Description<textarea name="description" defaultValue={task.description} maxLength={4000} placeholder="Details, context, links to look at" /></label>
-              {copyCount > 0 && (
-                <label className="inline small">
-                  <input type="checkbox" name="everyone" value="yes" defaultChecked />
-                  Change the name, description, and due date for everyone&apos;s copy ({copyCount + 1} people)
-                </label>
-              )}
+
               <div>
                 <span className="field-label">Assigned to</span>
-                <AssigneePicker people={pickable(members)} meId={me.id} initial={task.ownerId ? [task.ownerId, ...task.coOwners.map((c) => c.id)] : []} />
+                {/* Opens on how the task was given out, so an Everyone task stays Everyone. */}
+                <AssigneePicker
+                  people={pickable(members)}
+                  meId={me.id}
+                  initial={task.ownerId ? [task.ownerId, ...task.coOwners.map((c) => c.id)] : []}
+                  allowEveryone={manages}
+                  initialEveryone={manages && shared}
+                />
+                {manages && shared && (
+                  <p className="small muted" style={{ margin: "4px 0 0" }}>Saving as Everyone updates every copy; each person keeps their own progress.</p>
+                )}
               </div>
               <div className="grid2">
                 <label>Due<input type="date" name="due" defaultValue={task.due ?? ""} /></label>
