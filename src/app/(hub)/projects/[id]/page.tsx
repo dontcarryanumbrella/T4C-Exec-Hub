@@ -205,10 +205,6 @@ export default async function ProjectPage({
         ) : (
           <div className="notice">Waiting for an approver. Add thoughts in the discussion below.</div>
         ))}
-      {project.status === "done" && (leads || project.tasks.some((t) => t.ownerId === me.id && t.status === "done")) && (
-        <div className="notice notice-success">Done! <Link href={`/people/${me.id}`}>Add it to your profile →</Link></div>
-      )}
-
       {project.goal && <p style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{project.goal}</p>}
 
       <div className="section-title">

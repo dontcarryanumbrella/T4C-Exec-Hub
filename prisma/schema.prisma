@@ -34,7 +34,8 @@ model Member {
   lastSeenAt         DateTime? // last heartbeat from an open, visible hub tab
   sortOrder    Int      @default(100)
   bio          String   @default("")
-  lore         String   @default("")
+  // Stored in the old "lore" column, which nobody had filled in.
+  linkedin     String   @default("") @map("lore")
   askMeAbout   String   @default("")
   wantToLearn  String   @default("")
   joinedAt     DateTime? // set on first successful sign-in
@@ -57,7 +58,6 @@ model Member {
   helpOffers     HelpOffer[]
   comments       Comment[]
   links          Link[]
-  accomplishments Accomplishment[]
   shoutoutsGiven  Shoutout[]     @relation("ShoutoutFrom")
   shoutoutsGot    Shoutout[]     @relation("ShoutoutTo")
 }
@@ -210,24 +210,6 @@ model Link {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-}
-
-// A win on someone's profile. Suggested ones come from finished work (a
-// project, a milestone, or accepted help); the person decides whether each
-// is shown or hidden. Manual ones are anything else worth bragging about.
-model Accomplishment {
-  id          String   @id @default(cuid())
-  memberId    String
-  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  title       String
-  description String   @default("")
-  date        String // YYYY-MM-DD
-  source      String   @default("manual") // manual | project | task | help
-  sourceId    String? // project, task, or help offer id the suggestion came from
-  shown       Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  @@unique([memberId, source, sourceId])
 }
 
 // One line of thanks. No counts, no rankings.

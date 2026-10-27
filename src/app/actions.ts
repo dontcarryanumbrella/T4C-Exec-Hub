@@ -21,7 +21,6 @@ import { randomBytes } from "node:crypto";
 import { PERMISSIONS, PRESETS, can, presetName, type Permission, type PermissionSet } from "@/lib/permissions";
 import { sendEmail } from "@/lib/email";
 import { activeWeek, addDays, daysBetween, isISODate, todayISO } from "@/lib/dates";
-import { suggestionsFor } from "@/lib/accomplishments";
 import { LIMIT, MEMBER_KINDS, isEmail, memberExists, projectExists, safePath, validWaitingOn } from "@/lib/guards";
 import { setFlash, type Flash } from "@/lib/flash";
 import { applyUndo, recordUndo } from "@/lib/undo";
@@ -354,14 +353,27 @@ export async function removeMember(fd: FormData) {
 
 // ---------- people ----------
 
+// Accepts "linkedin.com/in/name" or a full link; anything that isn't a web
+// address is dropped rather than shown as a broken link.
+function linkedinUrl(v: string): string {
+  if (!v) return "";
+  const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 export async function updateProfile(fd: FormData) {
   const me = await requireMember();
-  const prev = { bio: me.bio, lore: me.lore, askMeAbout: me.askMeAbout, wantToLearn: me.wantToLearn };
+  const prev = { bio: me.bio, linkedin: me.linkedin, askMeAbout: me.askMeAbout, wantToLearn: me.wantToLearn };
   await db.member.update({
     where: { id: me.id },
     data: {
       bio: str(fd, "bio", LIMIT.text),
-      lore: str(fd, "lore", LIMIT.text),
+      linkedin: linkedinUrl(str(fd, "linkedin", LIMIT.line)),
       askMeAbout: str(fd, "askMeAbout", LIMIT.line),
       wantToLearn: str(fd, "wantToLearn", LIMIT.line),
     },
@@ -373,73 +385,7 @@ export async function updateProfile(fd: FormData) {
   done(fd, `/people/${me.id}`);
 }
 
-// ---------- accomplishments & shoutouts ----------
-
-// Adds (shown) or hides a suggested win. The suggestion is looked up again
-// server-side, so people can only claim work the hub actually saw them do.
-export async function decideSuggestion(fd: FormData) {
-  const me = await requireMember();
-  const source = str(fd, "source");
-  const sourceId = str(fd, "sourceId");
-  const suggestion = (await suggestionsFor(me.id)).find((s) => s.source === source && s.sourceId === sourceId);
-  if (suggestion) {
-    const shown = str(fd, "decision") === "add";
-    const a = await db.accomplishment.create({
-      data: {
-        memberId: me.id,
-        source,
-        sourceId,
-        title: str(fd, "title") || suggestion.title,
-        description: str(fd, "description", LIMIT.line),
-        date: suggestion.date,
-        shown,
-      },
-    });
-    await tell(me, shown ? `Added “${a.title}” to your profile.` : "Hidden. It won't be suggested again.", {
-      undo: { kind: "accomp.create", label: shown ? "adding that accomplishment" : "hiding that suggestion", payload: { id: a.id } },
-    });
-  }
-  done(fd, `/people/${me.id}`);
-}
-
-export async function addAccomplishment(fd: FormData) {
-  const me = await requireMember();
-  const title = str(fd, "title");
-  if (!title) return refuse(fd, "Say what happened first.", `/people/${me.id}`);
-  const a = await db.accomplishment.create({
-    data: { memberId: me.id, title, description: str(fd, "description", LIMIT.line), date: optDate(fd, "date") ?? todayISO() },
-  });
-  await tell(me, `Added “${a.title}” to your profile.`, { undo: { kind: "accomp.create", label: "adding that win", payload: { id: a.id } } });
-  done(fd, `/people/${me.id}`);
-}
-
-export async function updateAccomplishment(fd: FormData) {
-  const me = await requireMember();
-  const a = await db.accomplishment.findUnique({ where: { id: str(fd, "accomplishmentId") } });
-  if (a && a.memberId === me.id) {
-    const shown = fd.get("shown") === "on";
-    await db.accomplishment.update({
-      where: { id: a.id },
-      data: { title: str(fd, "title") || a.title, description: str(fd, "description", LIMIT.line), date: optDate(fd, "date") ?? a.date, shown },
-    });
-    await tell(me, shown ? "Saved." : "Saved and hidden from your profile.", {
-      undo: { kind: "accomp.fields", label: "that edit", payload: { id: a.id, prev: { title: a.title, description: a.description, date: a.date, shown: a.shown } } },
-    });
-  }
-  done(fd, `/people/${me.id}`);
-}
-
-export async function deleteAccomplishment(fd: FormData) {
-  const me = await requireMember();
-  // Only manual wins are deleted; suggested ones are hidden instead, so they
-  // don't keep coming back as suggestions.
-  const a = await db.accomplishment.findFirst({ where: { id: str(fd, "accomplishmentId"), memberId: me.id, source: "manual" } });
-  if (a) {
-    await db.accomplishment.delete({ where: { id: a.id } });
-    await tell(me, `Deleted “${a.title}”.`, { tone: "info", undo: { kind: "accomp.delete", label: "the delete", payload: { data: a } } });
-  }
-  done(fd, `/people/${me.id}`);
-}
+// ---------- shoutouts ----------
 
 export async function giveShoutout(fd: FormData) {
   const me = await requireMember();
@@ -563,7 +509,6 @@ export async function updateProject(fd: FormData) {
       label: "those project changes",
       payload: { id: project.id, prev: { title: project.title, goal: project.goal, due: project.due, ownerId: project.ownerId, status: project.status }, prevCoOwners },
     },
-    next: finished ? { label: "Add it to your profile", href: `/people/${me.id}` } : undefined,
   });
   done(fd, `/projects/${project.id}`);
 }

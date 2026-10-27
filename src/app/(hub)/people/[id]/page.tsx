@@ -9,19 +9,10 @@ import AvatarEditor from "@/components/AvatarEditor";
 import { ConfirmButton } from "@/components/client";
 import { requireMember } from "@/lib/auth";
 import { activeWeek, formatDay, todayISO } from "@/lib/dates";
-import { suggestionsFor } from "@/lib/accomplishments";
 import { isOnline, presenceText } from "@/lib/presence";
 import { Avatar, StatusText } from "@/components/bits";
 import { workingOn } from "@/lib/tasks";
-import {
-  addAccomplishment,
-  decideSuggestion,
-  deleteAccomplishment,
-  deleteShoutout,
-  giveShoutout,
-  updateAccomplishment,
-  updateProfile,
-} from "../../../actions";
+import { deleteShoutout, giveShoutout, updateProfile } from "../../../actions";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const person = await db.member.findUnique({ where: { id: (await params).id }, select: { name: true } });
@@ -38,7 +29,6 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
   const person = await db.member.findUnique({
     where: { id },
     include: {
-      accomplishments: { orderBy: [{ date: "desc" }, { createdAt: "desc" }] },
       shoutoutsGot: { include: { from: true }, orderBy: { createdAt: "desc" } },
       commitments: {
         where: { weekStart: activeWeek(), task: workingOn(id) },
@@ -47,9 +37,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
     },
   });
   if (!person) notFound();
-  const suggestions = isMe ? await suggestionsFor(me.id) : [];
   const level = isMe ? levelFor(await xpFor(me.id)) : null;
-  const shown = person.accomplishments.filter((a) => a.shown);
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -88,10 +76,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
       <div className="grid2" style={{ marginTop: 14 }}>
         <div className="stack">
           {person.bio && <p>{person.bio}</p>}
-          {person.lore && <p><strong>Lore:</strong> {person.lore}</p>}
+          {person.linkedin && (
+            <p><strong>LinkedIn:</strong> <a href={person.linkedin} target="_blank" rel="noreferrer noopener">{person.linkedin.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</a></p>
+          )}
           {person.askMeAbout && <p><strong>Ask me about:</strong> {person.askMeAbout}</p>}
           {person.wantToLearn && <p><strong>I&apos;d like to learn:</strong> {person.wantToLearn}</p>}
-          {!person.bio && !person.lore && !person.askMeAbout && !person.wantToLearn && (
+          {!person.bio && !person.linkedin && !person.askMeAbout && !person.wantToLearn && (
             <p className="muted">{isMe ? "Your profile is empty. Fill it in below." : "No profile yet."}</p>
           )}
         </div>
@@ -113,81 +103,6 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
-
-      {isMe && suggestions.length > 0 && (
-        <div className="notice notice-success" style={{ marginTop: 20 }}>
-          <h2>From your finished work — add to your profile?</h2>
-          {suggestions.map((s) => (
-            <form key={`${s.source}:${s.sourceId}`} action={decideSuggestion} className="stack" style={{ borderTop: "1px solid #f0dca8", paddingTop: 10, marginTop: 10 }}>
-              <input type="hidden" name="back" value={path} />
-              <input type="hidden" name="source" value={s.source} />
-              <input type="hidden" name="sourceId" value={s.sourceId} />
-              <div className="row small muted">{formatDay(s.date)}</div>
-              <input type="text" name="title" defaultValue={s.title} />
-              <input type="text" name="description" defaultValue={s.description} placeholder="A line of detail (optional)" />
-              <div className="row">
-                <button name="decision" value="add">Add to my profile</button>
-                <button name="decision" value="hide" className="secondary">Not this one</button>
-              </div>
-            </form>
-          ))}
-        </div>
-      )}
-
-      <h2 style={{ marginTop: 24 }}>Accomplishments</h2>
-      {shown.length === 0 && <p className="muted small">Nothing yet.</p>}
-      <ul style={{ paddingLeft: 18 }}>
-        {shown.map((a) => (
-          <li key={a.id} style={{ marginBottom: 6 }}>
-            <strong>{a.title}</strong> <span className="muted small">— {formatDay(a.date)}</span>
-            {a.description && <div className="small">{a.description}</div>}
-          </li>
-        ))}
-      </ul>
-
-      {isMe && (
-        <>
-          <details>
-            <summary>+ Add a win from outside the hub</summary>
-            <form action={addAccomplishment} className="box stack" style={{ maxWidth: 560 }}>
-              <input type="hidden" name="back" value={path} />
-              <label>What happened<input type="text" name="title" required placeholder="e.g. Accepted to the Duke Tech Policy Lab" /></label>
-              <label>Detail (optional)<input type="text" name="description" /></label>
-              <label>Date<input type="date" name="date" defaultValue={today} /></label>
-              <button>Add</button>
-            </form>
-          </details>
-          {person.accomplishments.length > 0 && (
-            <details>
-              <summary>Edit or hide accomplishments</summary>
-              <div className="stack">
-                {person.accomplishments.map((a) => (
-                  <div key={a.id} className="box">
-                    <form action={updateAccomplishment} className="stack">
-                      <input type="hidden" name="back" value={path} />
-                      <input type="hidden" name="accomplishmentId" value={a.id} />
-                      <input type="text" name="title" defaultValue={a.title} />
-                      <input type="text" name="description" defaultValue={a.description} placeholder="Detail" />
-                      <div className="row">
-                        <input type="date" name="date" defaultValue={a.date} style={{ width: "auto" }} />
-                        <label className="inline" style={{ margin: 0 }}><input type="checkbox" name="shown" defaultChecked={a.shown} /> Show on profile</label>
-                        <button className="secondary">Save</button>
-                      </div>
-                    </form>
-                    {a.source === "manual" && (
-                      <form action={deleteAccomplishment} style={{ marginTop: 6 }}>
-                        <input type="hidden" name="back" value={path} />
-                        <input type="hidden" name="accomplishmentId" value={a.id} />
-                        <ConfirmButton message="Delete this accomplishment?" className="link small">Delete</ConfirmButton>
-                      </form>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-        </>
-      )}
 
       <h2 style={{ marginTop: 24 }}>Shoutouts</h2>
       {person.shoutoutsGot.length === 0 && <p className="muted small">None yet.</p>}
@@ -218,7 +133,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
           <form action={updateProfile} className="box stack" style={{ maxWidth: 560 }}>
             <input type="hidden" name="back" value={path} />
             <label>Short bio<textarea name="bio" defaultValue={me.bio} placeholder="Year, major, what you're into" /></label>
-            <label>Lore (optional)<textarea name="lore" defaultValue={me.lore} placeholder="Club history, a fun fact, the story people should know" /></label>
+            <label>LinkedIn (optional)<input type="url" name="linkedin" defaultValue={me.linkedin} placeholder="https://www.linkedin.com/in/your-name" /></label>
             <label>Ask me about…<input type="text" name="askMeAbout" defaultValue={me.askMeAbout} placeholder="e.g. Canva, cold-emailing speakers, policy research" /></label>
             <label>I&apos;d like to learn…<input type="text" name="wantToLearn" defaultValue={me.wantToLearn} placeholder="e.g. budgeting, running a workshop" /></label>
             <button>Save profile</button>

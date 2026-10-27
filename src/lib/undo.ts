@@ -150,15 +150,6 @@ export async function applyUndo(me: Me, undoId: string): Promise<string | null> 
     case "profile":
       await db.member.update({ where: { id: me.id }, data: p.prev });
       break;
-    case "accomp.create":
-      await db.accomplishment.deleteMany({ where: { id: p.id, memberId: me.id } });
-      break;
-    case "accomp.fields":
-      await db.accomplishment.updateMany({ where: { id: p.id, memberId: me.id }, data: p.prev });
-      break;
-    case "accomp.delete":
-      await db.accomplishment.create({ data: { ...p.data, createdAt: new Date(p.data.createdAt) } });
-      break;
     case "meeting.fields":
       await db.meeting.updateMany({ where: { id: p.id }, data: p.prev });
       break;
