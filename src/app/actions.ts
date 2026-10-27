@@ -813,17 +813,34 @@ export async function toggleThisWeek(fd: FormData) {
 }
 
 // A nudge to a task's owner, e.g. "any update on the room booking?".
+// Pings the people picked from a task: anyone on it, or anyone with a copy of
+// a task given to Everyone. Each ping opens that person's own copy.
 export async function pingOwner(fd: FormData) {
   const me = await requireMember();
-  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") } });
-  if (!task?.ownerId || task.ownerId === me.id) return refuse(fd, "That task has no one else to ping.");
-  const recent = await db.notification.count({
-    where: { toId: task.ownerId, fromId: me.id, href: `/?task=${task.id}`, createdAt: { gte: new Date(Date.now() - 6 * 3600_000) } },
-  });
-  if (recent) return refuse(fd, "You already pinged them about this in the last few hours.");
+  const task = await db.task.findUnique({ where: { id: str(fd, "taskId") }, include: { coOwners: { select: { id: true } } } });
+  if (!task?.ownerId) return refuse(fd, "That task has no one to ping.");
+  const copies = await db.task.findMany({ where: copiesOf(task), select: { id: true, ownerId: true } });
+  const taskFor = new Map<string, string>([
+    ...[task.ownerId, ...task.coOwners.map((c) => c.id)].map((id) => [id, task.id] as [string, string]),
+    ...copies.map((c) => [c.ownerId!, c.id] as [string, string]),
+  ]);
+  taskFor.delete(me.id);
+  const picked = fd.getAll("toId").map(String);
+  const wanted = (picked.length ? picked : [task.ownerId]).filter((id) => taskFor.has(id));
+  if (!wanted.length) return refuse(fd, "Pick someone to ping first.");
+  const since = new Date(Date.now() - 6 * 3600_000);
   const note = str(fd, "message", 200);
-  await notify(task.ownerId, me.id, `${me.name} pinged you about “${task.title}”${note ? `: ${note}` : "."}`, `/?task=${task.id}`);
-  await tell(me, `Pinged ${await nameOf(task.ownerId)}. They'll see it under the bell.`);
+  const sent: string[] = [];
+  for (const id of new Set(wanted)) {
+    const href = `/?task=${taskFor.get(id)}`;
+    if (await db.notification.count({ where: { toId: id, fromId: me.id, href, createdAt: { gte: since } } })) continue;
+    await notify(id, me.id, `${me.name} pinged you about “${task.title}”${note ? `: ${note}` : "."}`, href);
+    sent.push(id);
+  }
+  if (!sent.length) return refuse(fd, `You already pinged ${wanted.length === 1 ? "them" : "everyone you picked"} about this in the last few hours.`);
+  const skipped = new Set(wanted).size - sent.length;
+  const who = sent.length === 1 ? await nameOf(sent[0]) : `${sent.length} people`;
+  await tell(me, `Pinged ${who}. They'll see it under the bell.${skipped ? ` Skipped ${skipped} you pinged in the last few hours.` : ""}`);
   done(fd);
 }
 

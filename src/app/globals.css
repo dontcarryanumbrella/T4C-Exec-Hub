@@ -614,7 +614,7 @@ a:not(.button):not(.plain):not(.list-row):not(.side-link):not(.menu-item):not(.p
 .avatar-stack-face + .avatar-stack-face, .avatar-stack-more { margin-left: calc(var(--s) * -0.3); }
 .avatar-stack-more { display: inline-grid; place-items: center; min-width: var(--s); height: var(--s); padding: 0 4px; border-radius: 999px;
   background: #e8ebf0; color: var(--ink-2); font-size: 11px; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
-.assignees { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.assignees { display: inline-flex; align-items: center; gap: 8px; min-width: 0; vertical-align: middle; }
 .assignees > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assignee-picker { flex: 1; min-width: 150px; }
 .assignee-picker .menu { display: block; }
@@ -628,3 +628,5 @@ a:not(.button):not(.plain):not(.list-row):not(.side-link):not(.menu-item):not(.p
 .picker-person input { width: auto; margin: 0; }
 .picker-owner { margin-left: auto; }
 .picker-hint { padding: 6px 16px 4px; margin: 0; }
+.ping-pick { max-height: 220px; overflow-y: auto; }
+.ping-pick label { margin-bottom: 6px; color: var(--ink); font-size: 14px; }

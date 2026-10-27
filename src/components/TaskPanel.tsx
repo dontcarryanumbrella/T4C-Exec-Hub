@@ -6,6 +6,7 @@ import { can, type PermissionSet } from "@/lib/permissions";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { copiesOf, isOnTask, pickable } from "@/lib/tasks";
 import AssigneePicker from "./AssigneePicker";
+import { AvatarStack } from "./AvatarStack";
 import { Assignees, CommentBody, StatusText } from "./bits";
 import { ConfirmButton, EscapeToClose } from "./client";
 import { Icon } from "./icons";
@@ -69,15 +70,30 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
   const myOffer = liveOffers.find((o) => o.helperId === me.id);
   const Back = () => <input type="hidden" name="back" value={back} />;
 
-  const [members, siblings, copyCount] = canEdit
+  // A task given to Everyone is one copy per person. Seen by someone else, it
+  // reads as the whole group's task, not as whoever's copy happened to open.
+  const copies = task.ownerId
+    ? await db.task.findMany({ where: copiesOf(task), select: { status: true, owner: true }, orderBy: { owner: { name: "asc" } } })
+    : [];
+  // Who you can ping from here: everyone on this task, or with a copy of it.
+  // People who already finished their copy start unticked.
+  const pingable = [
+    ...[task.owner, ...task.coOwners].flatMap((p) => (p ? [{ person: p, done: task.status === "done" }] : [])),
+    ...copies.flatMap((c) => (c.owner ? [{ person: c.owner, done: c.status === "done" }] : [])),
+  ].filter((p, i, all) => p.person.id !== me.id && all.findIndex((q) => q.person.id === p.person.id) === i);
+  const shared = copies.length > 0;
+  const everyoneView = shared && !onIt;
+  const everyoneDone = [task, ...copies].filter((c) => c.status === "done").length;
+  // Only managers edit or delete every copy at once.
+  const copyCount = manages ? copies.length : 0;
+  const [members, siblings] = canEdit
     ? await Promise.all([
         db.member.findMany({ where: { kind: "exec" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
         task.projectId
           ? db.task.findMany({ where: { projectId: task.projectId }, select: { id: true, title: true, waitingOnId: true }, orderBy: { createdAt: "asc" } })
           : Promise.resolve([]),
-        manages && task.ownerId ? db.task.count({ where: copiesOf(task) }) : Promise.resolve(0),
       ])
-    : [[], [], 0];
+    : [[], []];
   // Tasks that already wait on this one can't be picked, or they'd form a loop.
   const loop = dependents(task.id, siblings);
   const waitable = siblings.filter((s) => s.id !== task.id && !loop.has(s.id));
@@ -154,9 +170,20 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
 
         <h2 className="panel-title">{task.title}</h2>
         <p className="small muted panel-meta" style={{ margin: 0 }}>
-          <StatusText task={task} today={today} noDue />
-          {" · "}
-          {isOwner && !task.coOwners.length ? "You own this" : <Assignees task={task} meId={me.id} size={20} />}
+          {everyoneView ? (
+            <>
+              <span className="assignees">
+                <AvatarStack people={[task.owner!, ...copies.flatMap((c) => (c.owner ? [c.owner] : []))]} size={20} max={4} />
+                <span>Given to everyone · {everyoneDone} of {copies.length + 1} done</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <StatusText task={task} today={today} noDue />
+              {" · "}
+              {isOwner && !task.coOwners.length ? (shared ? "Your copy" : "You own this") : <Assignees task={task} meId={me.id} size={20} />}
+            </>
+          )}
           {task.due && ` · due ${formatDay(task.due)}${task.dueTime ? ` at ${timeLabel(task.dueTime)}` : ""}`}
           {isOwner && task.assignedBy && task.assignedById !== me.id && ` · from ${task.assignedBy.name}`}
         </p>
@@ -187,7 +214,7 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             <button className="link small">{onMyWeek ? "✓ On your card this week · take it off" : "+ Add to your card this week"}</button>
           </form>
         )}
-        {task.ownerId && isOpen && (
+        {task.ownerId && isOpen && !everyoneView && (
           <p className="small muted" style={{ marginTop: 8 }}>
             {onIt
               ? onMyWeek ? "On your card this week." : "Not on your card this week."
@@ -223,8 +250,9 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
             <button name="commit" value="no" className="secondary">Take it, plan later</button>
           </form>
         )}
-        {!canEdit && !isUpForGrabs && isOpen && (
+        {!isUpForGrabs && isOpen && ((!canEdit && !shared) || pingable.length > 0) && (
           <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
+          {!canEdit && !shared && (
           <details className="offer" open={!!myOffer || undefined}>
             <summary className="button secondary">I can help</summary>
             <form action={offerHelp} className="stack" style={{ marginTop: 8 }}>
@@ -234,14 +262,35 @@ export default async function TaskPanel({ taskId, me, back, closeHref }: { taskI
               <button>{myOffer ? "Update offer" : "Send offer"}</button>
             </form>
           </details>
-          <Menu label={`Ping ${task.owner?.name}`} align="left" trigger={<span className="button secondary">Ping {task.owner?.name.split(/\s+/)[0]}</span>}>
-            <form action={pingOwner} className="menu-panel stack">
-              <Back />
-              <input type="hidden" name="taskId" value={task.id} />
-              <input type="text" name="message" maxLength={200} placeholder="Optional note, e.g. any update?" aria-label="Note" />
-              <button className="small">Send ping</button>
-            </form>
-          </Menu>
+          )}
+          {pingable.length > 0 && (
+            <Menu
+              label="Ping people on this task"
+              align="left"
+              trigger={<span className="button secondary">{pingable.length === 1 ? `Ping ${pingable[0].person.name.split(/\s+/)[0]}` : "Ping…"}</span>}
+            >
+              <form action={pingOwner} className="menu-panel stack">
+                <Back />
+                <input type="hidden" name="taskId" value={task.id} />
+                {pingable.length === 1 ? (
+                  <input type="hidden" name="toId" value={pingable[0].person.id} />
+                ) : (
+                  <div className="ping-pick">
+                    {pingable.map(({ person, done }) => (
+                      <label key={person.id} className="inline">
+                        <input type="checkbox" name="toId" value={person.id} defaultChecked={!done} />
+                        <AvatarStack people={[person]} size={20} />
+                        {person.name}
+                        {done && <span className="muted small">· done</span>}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <input type="text" name="message" maxLength={200} placeholder="Optional note, e.g. any update?" aria-label="Note" />
+                <button className="small">Send ping</button>
+              </form>
+            </Menu>
+          )}
           </div>
         )}
 

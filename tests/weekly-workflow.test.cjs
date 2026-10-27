@@ -32,7 +32,7 @@ function load(file, mocks = {}, now = "2026-10-25T13:00:00Z", cache = new Map())
 
 function fixture() {
   let seq = 0;
-  const state = { member: [{ id: "a", name: "Alex", kind: "exec" }, { id: "b", name: "Blair", kind: "exec" }], task: [], commitment: [], checkIn: [], helpRequest: [], undoEntry: [], project: [] };
+  const state = { member: [{ id: "a", name: "Alex", kind: "exec" }, { id: "b", name: "Blair", kind: "exec" }], task: [], commitment: [], checkIn: [], helpRequest: [], undoEntry: [], project: [], notification: [] };
   const matches = (row, where = {}) => Object.entries(where).every(([key, value]) => {
     if (value === undefined) return true;
     if (key === "OR") return value.some((w) => matches(row, w));
@@ -85,7 +85,7 @@ function fixture() {
     "next/headers": {},
     "@/lib/email": { sendEmail() { throw new Error("No emails in tests"); } },
     "@/lib/flash": { setFlash: async (notice) => notices.push(notice) },
-    "@/lib/pings": { notify: async () => {}, pingMentions: async () => [] },
+    "@/lib/pings": { notify: async (toId, fromId, text, href) => { state.notification.push({ toId, fromId, text, href, createdAt: new Date("2026-10-25T13:00:00Z") }); }, pingMentions: async () => [] },
     "@/lib/xp": { xpFor: async () => 0, xpNote: async () => "" },
   };
   return { state, db, mocks, notices, actions: load("src/app/actions.ts", mocks) };
@@ -439,4 +439,19 @@ test("deleting erases the task; only its owner or a manager can, and managers ca
   f.state.task.push(task("mine2", { title: "feedback?", createdAt: at }));
   await redirected(() => f.actions.deleteTask(form({ taskId: "mine2", everyone: "yes" })), "/");
   assert.deepEqual(f.state.task.map((t) => t.id), ["helping"]);
+});
+
+test("ping picks people from every copy of an Everyone task; each ping opens their own copy", async () => {
+  const f = fixture();
+  f.state.member.push({ id: "c", name: "Casey", kind: "exec" });
+  const at = new Date("2026-10-25T12:00:00Z");
+  f.state.task.push(
+    task("b-copy", { title: "feedback?", ownerId: "b", createdAt: at }),
+    task("c-copy", { title: "feedback?", ownerId: "c", createdAt: at }),
+  );
+  await redirected(() => f.actions.pingOwner(form({ taskId: "b-copy", toId: ["b", "c", "a"] })), "/");
+  assert.deepEqual(f.state.notification.map((n) => [n.toId, n.href]), [["b", "/?task=b-copy"], ["c", "/?task=c-copy"]]);
+  await redirected(() => f.actions.pingOwner(form({ taskId: "b-copy", toId: ["b"] })), "/");
+  assert.equal(f.state.notification.length, 2);
+  assert.match(f.notices.at(-1).text, /already pinged/);
 });
