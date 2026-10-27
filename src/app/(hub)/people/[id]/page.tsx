@@ -42,24 +42,39 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
   return (
     <div style={{ maxWidth: 820 }}>
       <Link href="/people" className="back-link">← People</Link>
-      <div className="card-head" style={{ marginBottom: 4 }}>
-        <Avatar name={person.name} look={person} size={56} seen={person.lastSeenAt} />
-        <div>
-          <h1 style={{ margin: 0 }}>{person.name}</h1>
-          <div className="muted">
-            {person.role}
-            {person.kind !== "exec" ? ` · ${person.kind}` : ""} · <a href={`mailto:${person.email}`}>{person.email}</a>
-            {" · "}
-            <span className={isOnline(person.lastSeenAt) ? "status ok" : undefined}>{presenceText(person.lastSeenAt)}</span>
+      {/* Name on the left; your level on the right (only you see it). */}
+      <div className="profile-head">
+        <div className="card-head" style={{ margin: 0 }}>
+          <Avatar name={person.name} look={person} size={56} seen={person.lastSeenAt} />
+          <div>
+            <h1 style={{ margin: 0 }}>{person.name}</h1>
+            <div className="muted">
+              {person.role}
+              {person.kind !== "exec" ? ` · ${person.kind}` : ""} · <a href={`mailto:${person.email}`}>{person.email}</a>
+              {" · "}
+              <span className={isOnline(person.lastSeenAt) ? "status ok" : undefined}>{presenceText(person.lastSeenAt)}</span>
+            </div>
           </div>
         </div>
+        {isMe && level && (
+          <div className="profile-level">
+            <LevelCard level={level} />
+          </div>
+        )}
       </div>
 
-      {isMe && level && (
+      {isMe && (
         <>
-          <details style={{ marginTop: 14, maxWidth: 420 }}>
-            <summary>Your XP and level</summary>
-            <LevelCard level={level} />
+          <details className="box" style={{ marginTop: 22 }} open={!me.bio && !me.askMeAbout}>
+            <summary><strong>Edit my profile</strong> <span className="small muted">· bio, LinkedIn, what you know</span></summary>
+            <form action={updateProfile} className="stack" style={{ marginTop: 12, maxWidth: 560 }}>
+              <input type="hidden" name="back" value={path} />
+              <label>Short bio<textarea name="bio" defaultValue={me.bio} placeholder="Year, major, what you're into" /></label>
+              <label>LinkedIn (optional)<input type="url" name="linkedin" defaultValue={me.linkedin} placeholder="https://www.linkedin.com/in/your-name" /></label>
+              <label>Ask me about…<input type="text" name="askMeAbout" defaultValue={me.askMeAbout} placeholder="e.g. Canva, cold-emailing speakers, policy research" /></label>
+              <label>I&apos;d like to learn…<input type="text" name="wantToLearn" defaultValue={me.wantToLearn} placeholder="e.g. budgeting, running a workshop" /></label>
+              <button>Save profile</button>
+            </form>
           </details>
           <details className="box buddy-box" style={{ marginTop: 12 }}>
             <summary><strong>Build your buddy</strong> <span className="small muted">· your avatar</span></summary>
@@ -75,7 +90,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
 
       <div className="grid2" style={{ marginTop: 14 }}>
         <div className="stack">
-          {person.bio && <p>{person.bio}</p>}
+          {person.bio && <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{person.bio}</p>}
           {person.linkedin && (
             <p><strong>LinkedIn:</strong> <a href={person.linkedin} target="_blank" rel="noreferrer noopener">{person.linkedin.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</a></p>
           )}
@@ -127,19 +142,6 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
         </form>
       )}
 
-      {isMe && (
-        <details style={{ marginTop: 24 }} open={!me.bio && !me.askMeAbout}>
-          <summary>Edit my profile</summary>
-          <form action={updateProfile} className="box stack" style={{ maxWidth: 560 }}>
-            <input type="hidden" name="back" value={path} />
-            <label>Short bio<textarea name="bio" defaultValue={me.bio} placeholder="Year, major, what you're into" /></label>
-            <label>LinkedIn (optional)<input type="url" name="linkedin" defaultValue={me.linkedin} placeholder="https://www.linkedin.com/in/your-name" /></label>
-            <label>Ask me about…<input type="text" name="askMeAbout" defaultValue={me.askMeAbout} placeholder="e.g. Canva, cold-emailing speakers, policy research" /></label>
-            <label>I&apos;d like to learn…<input type="text" name="wantToLearn" defaultValue={me.wantToLearn} placeholder="e.g. budgeting, running a workshop" /></label>
-            <button>Save profile</button>
-          </form>
-        </details>
-      )}
     </div>
   );
 }

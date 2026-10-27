@@ -372,6 +372,8 @@ details.offer[open] > summary { display: none; }
 .topbar .menu > summary .avatar-art { width: 36px; height: 36px; }
 .list-row .name .avatar-art { width: 30px; height: 30px; }
 /* Levels */
+.profile-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px 40px; margin: 6px 0 4px; }
+.profile-level { flex: 0 1 340px; min-width: 260px; }
 .level-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: linear-gradient(180deg, var(--brand-tint), #fff); }
 .xp-bar { height: 8px; background: #e8edfb; border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
 .xp-bar > span { display: block; height: 100%; background: var(--brand-gradient); border-radius: 999px; transition: width .4s; }
