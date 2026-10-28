@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createMeeting } from "@/app/actions";
 import { Icon, type IconName } from "./icons";
 import { Menu } from "./Menu";
 import { Brand } from "./shell";
+import { ShapeFoot } from "./Shapes";
 
 type Props = {
   isExec: boolean;
@@ -15,7 +15,6 @@ type Props = {
   seesAdmin: boolean;
   canCreate: boolean;
   canPropose: boolean;
-  canWriteNotes: boolean;
 };
 
 // Drive-style left rail: one "New" button for every way to add something,
@@ -26,7 +25,7 @@ export default function Sidebar(p: Props) {
     { href: "/", label: "This Week", icon: "week" },
     { href: "/projects", label: "Folders", icon: "folder" },
     { href: "/calendar", label: "Calendar", icon: "calendar" },
-    { href: "/meetings", label: "Meetings", icon: "notes" },
+    { href: "/summary", label: "Summary", icon: "chart" },
     { href: "/people", label: "People", icon: "people" },
     ...(p.seesAdmin ? [{ href: "/admin", label: "Admin", icon: "shield" as const }] : []),
   ];
@@ -65,13 +64,6 @@ export default function Sidebar(p: Props) {
             <Icon name="idea" /> Idea to propose
           </Link>
         )}
-        {p.canWriteNotes && (
-          <form action={createMeeting}>
-            <button className="menu-item">
-              <Icon name="notes" /> Meeting notes
-            </button>
-          </form>
-        )}
         <Link href="/people?shoutout=1" className="menu-item">
           <Icon name="heart" /> Shoutout
         </Link>
@@ -101,6 +93,8 @@ export default function Sidebar(p: Props) {
             <span className="dot" aria-hidden /> Plan {p.planningAhead ? "next" : "this"} week
           </Link>
         ))}
+
+      <ShapeFoot />
     </aside>
   );
 }

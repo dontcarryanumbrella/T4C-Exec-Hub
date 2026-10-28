@@ -38,7 +38,6 @@ export default async function HubLayout({ children }: { children: React.ReactNod
         seesAdmin={seesAdmin(me)}
         canCreate={can(me, "canCreateProjects")}
         canPropose={can(me, "canPropose")}
-        canWriteNotes={can(me, "canWriteNotes")}
       />
       <div className="main">
         <header className="topbar">
@@ -69,14 +68,14 @@ export default async function HubLayout({ children }: { children: React.ReactNod
         <Tour
           autoOpen={!me.tutorialSeenAt}
           steps={[
-            { target: ".new-button", title: "+ New adds anything", text: "Plan your week, start a project folder, propose an idea, take meeting notes, or send a shoutout." },
+            { target: ".new-button", title: "+ New adds anything", text: "Plan your week, start a project or general folder, propose an idea, or send a shoutout." },
             { target: '.side-nav a[href="/"]', title: "This is your week", text: "Everyone's cards show what they're working on. Click any task to update it or ask for help." },
-            { target: '.side-nav a[href="/projects"]', title: "Folders hold the work", text: "General folders never end (one per role, plus any you add); projects have an end date." },
-            { target: '.side-nav a[href="/calendar"]', title: "Calendar", text: "Every due date and meeting in one week view. You can sync it to your own calendar." },
-            { target: '.side-nav a[href="/meetings"]', title: "Meetings", text: "Notes from each meeting, with the action items turned into tasks." },
+            { target: '.side-nav a[href="/projects"]', title: "Folders hold the work", text: "General folders never end (one per role, plus any you add); projects have an end date. Keep meeting notes in a general folder too." },
+            { target: '.side-nav a[href="/calendar"]', title: "Calendar", text: "Every due date in one week view. You can sync it to your own calendar." },
+            { target: '.side-nav a[href="/summary"]', title: "Summary", text: "How many tasks are live, overdue, and done, plus a map of who's working on what. Hover to trace connections, drag to fling them around." },
             { target: '.side-nav a[href="/people"]', title: "People", text: "See what each exec is up to, who's online, and send a shoutout." },
             { target: ".side-nudge, .side-done", title: "Plan each week", text: "Choose This week, Later, or Done for your tasks. Aim for 1–3 outcomes; you can change your plan anytime." },
-            { target: ".topbar .search", title: "Search anything", text: "Find tasks, folders, people, and meeting notes from one box." },
+            { target: ".topbar .search", title: "Search anything", text: "Find tasks, folders, and people from one box." },
             { target: ".topbar .bell", title: "Your pings", text: "Assignments, @mentions, and pings show up here, and in your morning email." },
             { target: ".side-guide", title: "Stuck? Open the Guide", text: "Short how-tos for everything, and you can replay this tour from there." },
           ]}

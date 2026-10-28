@@ -6,15 +6,15 @@ A shared workspace for a student club's exec board. Everyone plans their week, t
 
 - **Weekly plans.** Each exec picks 1–3 outcomes for the week; This Week shows everyone's card side by side, with overdue, blocked, and help-wanted work at the top.
 - **Folders for the work.** One standing folder per role, plus a folder per project. Tasks have owners, due dates, and "waiting on" steps; unowned tasks are up for grabs, and a task can go to everyone at once.
-- **Meetings that turn into tasks.** Meeting pages build an agenda from the board, and action items become real tasks.
+- **A summary of everything.** One page counts every task (live, overdue, completed) and maps who's working on what: folders, projects, and people are linked circles sized by how many tasks they hold. Meeting notes live in a general folder like any other work.
 - **Asking for and offering help**, @mentions, and shoutouts.
 - **One morning email** with what's due tomorrow, new pings, and a weekly check-in reminder.
-- **Calendar** of every deadline and meeting, downloadable or subscribable in Google Calendar.
+- **Calendar** of every deadline, downloadable or subscribable in Google Calendar.
 - **Admin controls**: invite members, set per-person permissions, and approve proposed ideas.
 
 ## Technical features
 
-**Stack:** Next.js 15 (App Router, React Server Components, Server Actions), React 19, Prisma 6 on Postgres, deployed on Vercel. No client state library and no UI framework: plain CSS with design tokens.
+**Stack:** Next.js 15 (App Router, React Server Components, Server Actions), React 19, Prisma 6 on Postgres, deployed on Vercel. No client state library and no UI framework: plain CSS with design tokens. The Summary map uses d3-force (with d3-drag and d3-zoom) for its physics.
 
 **Passwordless sign-in.** Admins invite people by email. Links are single-use and expiring (72 h for invites, 30 min for sign-ins), and only a SHA-256 hash of each token is stored. The link opens a "Continue" button rather than signing in on load, so email scanners can't spend it. Sessions last 120 days per device. The sign-in form is rate-limited per person and per IP, and tells people when an address isn't on file (pointing NetID addresses to their alias) rather than leaving them waiting for an email.
 
@@ -30,7 +30,7 @@ A shared workspace for a student club's exec board. Everyone plans their week, t
 
 **Presence.** An open, visible tab sends a heartbeat each minute; avatars show a green dot while someone is online and "Active 2 hr ago" otherwise.
 
-**Interface.** A Drive-style layout: one **+ New** button, a left rail, and a search bar across tasks, folders, people, and notes. A first-visit tour spotlights each control in turn. Each person's avatar color themes their own view. Works at phone width.
+**Interface.** A Drive-style layout: one **+ New** button, a left rail, and a search bar across tasks, folders, and people. A first-visit tour spotlights each control in turn. Each person's avatar color themes their own view. Works at phone width.
 
 **Hardening.** Text inputs are trimmed and length-capped, links must be `http(s)`, dates must be real dates, and referenced records are checked to exist. "Waiting on" links can't form cycles. Redirects stay inside the app. Security headers block framing and referrer leaks.
 

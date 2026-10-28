@@ -28,10 +28,44 @@ export function MiniNew() {
       <div className="mini-menu">
         <div>✓ Plan this week</div>
         <div>▢ Project</div>
+        <div>▭ General folder</div>
         <div>✦ Idea to propose</div>
-        <div>☰ Meeting notes</div>
         <div>♡ Shoutout</div>
       </div>
+    </div>
+  );
+}
+
+export function MiniSummary() {
+  // A tiny ring (live / overdue / done) beside a few linked dots.
+  const R = 22;
+  const C = 2 * Math.PI * R;
+  const parts = [
+    { color: "#2451d6", share: 0.55 },
+    { color: "#f2703d", share: 0.15 },
+    { color: "#0e6b3e", share: 0.3 },
+  ];
+  let start = 0;
+  return (
+    <div className="mini mini-summary">
+      <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden>
+        {parts.map((p) => {
+          const len = p.share * C;
+          const el = <circle key={p.color} cx="32" cy="32" r={R} fill="none" stroke={p.color} strokeWidth="9" strokeDasharray={`${len - 2} ${C}`} strokeDashoffset={-start} transform="rotate(-90 32 32)" />;
+          start += len;
+          return el;
+        })}
+      </svg>
+      <svg width="96" height="72" viewBox="0 0 96 72" aria-hidden>
+        <g stroke="#c9ceda" strokeWidth="1">
+          <line x1="30" y1="34" x2="14" y2="16" /><line x1="30" y1="34" x2="12" y2="50" /><line x1="30" y1="34" x2="48" y2="56" />
+          <line x1="70" y1="28" x2="48" y2="56" /><line x1="70" y1="28" x2="86" y2="12" /><line x1="70" y1="28" x2="88" y2="46" />
+        </g>
+        <circle cx="30" cy="34" r="12" fill="#2451d6" />
+        <circle cx="70" cy="28" r="9" fill="#fff" stroke="#0e6b3e" strokeWidth="3" />
+        <rect x="40" y="48" width="16" height="16" rx="6" fill="#f26fae" />
+        {[[14, 16], [12, 50], [86, 12], [88, 46]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3.5" fill={i === 1 ? "#f2703d" : "#7d93d9"} />)}
+      </svg>
     </div>
   );
 }
