@@ -22,6 +22,19 @@ export function Shape({ name, color, size = 24, className }: { name: ShapeName; 
   );
 }
 
+// The T4C mark: four of the family's shapes in a 2×2 grid, one per quarter.
+// Kept in sync with src/app/icon.svg (the favicon).
+export function BrandMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 28 28" className="brand-mark" aria-hidden>
+      <g><circle cx="6.5" cy="6.5" r="6" fill="#2451d6" /></g>
+      <g><path d={SHAPES.flower} fill="#f2703d" transform="translate(14.8 .8) scale(.52)" /></g>
+      <g><rect x="1.5" y="16.5" width="10" height="10" rx="3" fill="#d9a514" transform="rotate(-12 6.5 21.5)" /></g>
+      <g><path d={SHAPES.clover} fill="#0e6b3e" transform="translate(15 15) scale(.5)" /></g>
+    </svg>
+  );
+}
+
 // A few shapes peeking up from the bottom of the left rail.
 export function ShapeFoot() {
   const at = (name: ShapeName, color: string, x: number, y: number, s: number) => (

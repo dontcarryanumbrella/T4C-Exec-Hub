@@ -1,12 +1,13 @@
 import Link from "next/link";
+import { BrandMark } from "./Shapes";
 
 // The T4C mark, used in the nav and on every page outside it, so sign-in,
 // errors, and the hub all read as the same site.
 export function Brand({ href = "/" }: { href?: string }) {
   return (
     <Link href={href} className="brand" aria-label="T4C Exec Hub home">
-      <span className="brand-mark" aria-hidden>T4C</span>
-      <span className="brand-name">Exec Hub</span>
+      <BrandMark />
+      <span className="brand-name"><b>T4C</b> Exec Hub</span>
     </Link>
   );
 }
