@@ -18,14 +18,18 @@ import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import MentionInput from "@/components/MentionInput";
+import TaskGroups, { type GroupSection } from "@/components/TaskGroups";
 import {
   addComment,
   addLink,
   approveProposal,
+  createGroup,
   createTask,
   declineProposal,
+  deleteGroup,
   deleteProject,
   removeLink,
+  renameGroup,
   updateProject,
 } from "../../../actions";
 
@@ -55,6 +59,7 @@ export default async function ProjectPage({
       coOwners: { orderBy: { name: "asc" } },
       proposedBy: true,
       tasks: { include: { owner: true, coOwners: true, waitingOn: true, helpRequests: true }, orderBy: { createdAt: "asc" } },
+      groups: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       links: { orderBy: { createdAt: "asc" } },
       comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
     },
@@ -78,6 +83,70 @@ export default async function ProjectPage({
     .map((r) => ({ ...r, finished: r.copies.every((c) => finished(c.status)) }))
     .sort((a, b) => Number(a.finished) - Number(b.finished));
   const tasks = project.tasks;
+  const canGroup = canEdit;
+  const rowNode = ({ task: t, copies, finished: allDone }: (typeof rows)[number]) => {
+    const shared = copies.length > 1;
+    const doneCount = copies.filter((c) => c.status === "done").length;
+    const mine = shared && t.ownerId === me.id;
+    return (
+      <Link href={link(t.id)} scroll={false} draggable={false} className={`list-row cols-task${allDone ? " is-finished" : ""}`}>
+        <span className="name">
+          <Icon name={allDone && doneCount ? "check" : t.isMilestone ? "flag" : "circle"} />
+          <span title={t.isMilestone ? "Milestone" : undefined}>{t.title}</span>
+        </span>
+        <span className="cell optional">
+          {shared ? (
+            <span className="assignees">
+              <AvatarStack people={copies.flatMap((c) => (c.owner ? [c.owner] : []))} size={22} max={4} />
+              <span>{copiesLabel(copies.length, execs.length)}</span>
+            </span>
+          ) : t.owner ? (
+            <Assignees task={t} meId={me.id} />
+          ) : (
+            <span className="chip blue">Up for grabs</span>
+          )}
+        </span>
+        <span className="cell optional">{t.due ? formatDay(t.due) : ""}</span>
+        <span className="cell">
+          {shared ? (
+            <span className={`status ${allDone ? "done" : "muted"}`} title={mine ? "Opens your copy" : undefined}>
+              {doneCount} of {copies.length} done
+            </span>
+          ) : (
+            <StatusText task={t} today={today} short />
+          )}
+        </span>
+      </Link>
+    );
+  };
+  const groupIds = new Set(project.groups.map((g) => g.id));
+  const inGroup = (id: string | null) => rows.filter((r) => (r.task.groupId && groupIds.has(r.task.groupId) ? r.task.groupId : null) === id)
+    .map((r) => ({ key: r.task.id, ids: r.copies.map((c) => c.id), node: rowNode(r) }));
+  const sections: GroupSection[] = [
+    { id: null, name: "Not in a group", rows: inGroup(null) },
+    ...project.groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      rows: inGroup(g.id),
+      menu: canGroup && (
+        <Menu label={`Group actions for ${g.name}`}>
+          <form action={renameGroup} className="menu-panel stack">
+            <input type="hidden" name="groupId" value={g.id} />
+            <input type="hidden" name="back" value={path} />
+            <input type="text" name="name" defaultValue={g.name} maxLength={160} aria-label="Group name" required />
+            <button className="secondary">Rename</button>
+          </form>
+          <form action={deleteGroup}>
+            <input type="hidden" name="groupId" value={g.id} />
+            <input type="hidden" name="back" value={path} />
+            <ConfirmButton message={`Remove the group “${g.name}”? Its tasks stay in this folder, ungrouped.`} className="menu-item danger">
+              <Icon name="trash" /> Remove group
+            </ConfirmButton>
+          </form>
+        </Menu>
+      ),
+    })),
+  ];
   // Hidden fields that keep the rest of the project as it is when only one thing changes.
   const Keep = () => (
     <>
@@ -204,44 +273,16 @@ export default async function ProjectPage({
           </span>
         )}
       </div>
-      {tasks.length > 0 && (
-        <div className="list">
-          {rows.map(({ task: t, copies, finished: allDone }) => {
-            const shared = copies.length > 1;
-            const doneCount = copies.filter((c) => c.status === "done").length;
-            const mine = shared && t.ownerId === me.id;
-            return (
-              <Link key={t.id} href={link(t.id)} scroll={false} className={`list-row cols-task${allDone ? " is-finished" : ""}`}>
-                <span className="name">
-                  <Icon name={allDone && doneCount ? "check" : t.isMilestone ? "flag" : "circle"} />
-                  <span title={t.isMilestone ? "Milestone" : undefined}>{t.title}</span>
-                </span>
-                <span className="cell optional">
-                  {shared ? (
-                    <span className="assignees">
-                      <AvatarStack people={copies.flatMap((c) => (c.owner ? [c.owner] : []))} size={22} max={4} />
-                      <span>{copiesLabel(copies.length, execs.length)}</span>
-                    </span>
-                  ) : t.owner ? (
-                    <Assignees task={t} meId={me.id} />
-                  ) : (
-                    <span className="chip blue">Up for grabs</span>
-                  )}
-                </span>
-                <span className="cell optional">{t.due ? formatDay(t.due) : ""}</span>
-                <span className="cell">
-                  {shared ? (
-                    <span className={`status ${allDone ? "done" : "muted"}`} title={mine ? "Opens your copy" : undefined}>
-                      {doneCount} of {copies.length} done
-                    </span>
-                  ) : (
-                    <StatusText task={t} today={today} short />
-                  )}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
+      {(tasks.length > 0 || project.groups.length > 0) && <TaskGroups projectId={project.id} sections={sections} editable={canGroup} />}
+      {canGroup && (
+        <Menu label="New group" align="left" trigger={<span className="small add-link"><Icon name="plus" size={16} /> New group</span>}>
+          <form action={createGroup} className="menu-panel stack">
+            <input type="hidden" name="projectId" value={project.id} />
+            <input type="hidden" name="back" value={path} />
+            <input type="text" name="name" placeholder="Group name, e.g. Spring Gala" maxLength={160} required />
+            <button>Add group</button>
+          </form>
+        </Menu>
       )}
       {isExec && project.status === "active" && (
         <form action={createTask} className="add-task" id="add-task">
@@ -250,6 +291,12 @@ export default async function ProjectPage({
           <div className="row">
             <input type="text" name="title" required maxLength={160} placeholder={tasks.length ? "Add a task" : "Add the first task, e.g. Confirm a speaker and date"} aria-label="New task" style={{ flex: 3, minWidth: 200 }} />
             {manages && <AssigneePicker people={pickable(execs)} meId={me.id} allowEveryone />}
+            {project.groups.length > 0 && (
+              <select name="groupId" defaultValue="" aria-label="Group" style={{ width: "auto" }}>
+                <option value="">No group</option>
+                {project.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            )}
             <input type="date" name="due" aria-label="Due date (optional)" title="Due date (optional)" style={{ flex: 1, minWidth: 130 }} />
             <button>Add</button>
           </div>

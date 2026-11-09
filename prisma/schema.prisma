@@ -91,6 +91,8 @@ model Project {
   // shown under General;
   // "project" = something with an end.
   kind         String    @default("project")
+  // Position set by dragging on the Folders page; also orders the Summary map.
+  sortOrder    Int       @default(0)
   due          String? // YYYY-MM-DD
   ownerId      String?
   owner        Member?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
@@ -101,8 +103,21 @@ model Project {
   createdAt    DateTime  @default(now())
 
   tasks    Task[]
+  groups   TaskGroup[]
   links    Link[]
   comments Comment[]
+}
+
+// A named section inside a folder or project (e.g. "Spring Gala" inside
+// Events & Programming). Deleting one leaves its tasks ungrouped.
+model TaskGroup {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  tasks     Task[]
 }
 
 model Task {
@@ -117,6 +132,8 @@ model Task {
   isMilestone   Boolean   @default(false)
   projectId     String?
   project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  groupId       String?
+  group         TaskGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   // No owner = "up for grabs": anyone on the board can take it on.
   ownerId       String?
   owner         Member?   @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)

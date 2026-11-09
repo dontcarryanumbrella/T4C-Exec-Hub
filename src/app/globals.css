@@ -770,3 +770,18 @@ button:active:not(:disabled), .button:active { transform: translateY(1px); }
   .donut { width: 180px; height: 180px; }
   .pill-toggle { margin-left: 0; }
 }
+
+/* Drag-to-reorder on the Folders page */
+.reorder-item[draggable="true"] { cursor: grab; }
+.reorder-item.is-dragging { opacity: .4; }
+.reorder-item > .folder-tile { height: 100%; }
+
+/* Task groups inside a folder or project */
+.task-group { margin-bottom: 14px; border-radius: 8px; transition: background .1s; }
+.task-group.is-over { background: #eef3ff; }
+.task-group.is-dragging { opacity: .4; }
+.group-head { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
+.group-head[draggable="true"] { cursor: grab; }
+.group-head h3 { margin: 0; font-size: 14.5px; }
+.group-head .menu { margin-left: auto; }
+.group-empty { padding: 10px 12px; margin: 0; border-bottom: 1px dashed var(--line); }

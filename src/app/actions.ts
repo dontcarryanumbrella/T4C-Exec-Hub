@@ -433,6 +433,71 @@ export async function createProject(fd: FormData) {
   redirect(`/projects/${project.id}`);
 }
 
+// Drag-to-reorder on the Folders page: saves the given order as positions 1..n.
+export async function reorderProjects(ids: string[]) {
+  await requirePermission("canCreateProjects");
+  if (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => typeof id !== "string")) return;
+  await db.$transaction(ids.map((id, i) => db.project.updateMany({ where: { id }, data: { sortOrder: i + 1 } })));
+  revalidatePath("/projects");
+  revalidatePath("/summary");
+}
+
+// ---------- task groups (sections inside a folder or project) ----------
+
+// Same people who can edit the folder's details.
+async function groupEditor(projectId: string) {
+  const me = await requireMember();
+  const project = await db.project.findUnique({ where: { id: projectId }, include: { coOwners: { select: { id: true } } } });
+  if (!project) forbid();
+  if (!(leadsProject(project, me.id) || can(me, "canManageTasks") || can(me, "canCreateProjects"))) forbid();
+  return { me, project };
+}
+
+export async function createGroup(fd: FormData) {
+  const { project } = await groupEditor(str(fd, "projectId"));
+  const name = str(fd, "name", LIMIT.line);
+  if (!name) return refuse(fd, "Give the group a name first.");
+  const last = await db.taskGroup.aggregate({ where: { projectId: project.id }, _max: { sortOrder: true } });
+  await db.taskGroup.create({ data: { name, projectId: project.id, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+  done(fd, `/projects/${project.id}`);
+}
+
+export async function renameGroup(fd: FormData) {
+  const group = await db.taskGroup.findUnique({ where: { id: str(fd, "groupId") } });
+  if (!group) forbid();
+  await groupEditor(group.projectId);
+  const name = str(fd, "name", LIMIT.line);
+  if (name) await db.taskGroup.update({ where: { id: group.id }, data: { name } });
+  done(fd, `/projects/${group.projectId}`);
+}
+
+export async function deleteGroup(fd: FormData) {
+  const group = await db.taskGroup.findUnique({ where: { id: str(fd, "groupId") } });
+  if (!group) forbid();
+  const { me } = await groupEditor(group.projectId);
+  await db.taskGroup.delete({ where: { id: group.id } });
+  await tell(me, `Removed the group “${group.name}”. Its tasks are still here, ungrouped.`, { tone: "info" });
+  done(fd, `/projects/${group.projectId}`);
+}
+
+// Drag on the project page: put tasks (all copies of a shared one) into a
+// group, or back to ungrouped when groupId is null.
+export async function moveTasksToGroup(projectId: string, taskIds: string[], groupId: string | null) {
+  await groupEditor(projectId);
+  if (!Array.isArray(taskIds) || taskIds.length > 200 || taskIds.some((id) => typeof id !== "string")) return;
+  if (groupId && !(await db.taskGroup.count({ where: { id: groupId, projectId } }))) return;
+  await db.task.updateMany({ where: { id: { in: taskIds }, projectId }, data: { groupId } });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+// Drag a group's header to reorder groups.
+export async function reorderGroups(projectId: string, ids: string[]) {
+  await groupEditor(projectId);
+  if (!Array.isArray(ids) || ids.length > 200) return;
+  await db.$transaction(ids.map((id, i) => db.taskGroup.updateMany({ where: { id: String(id), projectId }, data: { sortOrder: i + 1 } })));
+  revalidatePath(`/projects/${projectId}`);
+}
+
 export async function proposeProject(fd: FormData) {
   const me = await requirePermission("canPropose");
   const title = str(fd, "title");
@@ -552,6 +617,7 @@ export async function createTask(fd: FormData) {
       data: {
         title,
         projectId: projectId || null,
+        groupId: project && (await db.taskGroup.count({ where: { id: str(fd, "groupId"), projectId: project.id } })) ? str(fd, "groupId") : null,
         ownerId,
         coOwners: { connect: coOwnerIds.map((id) => ({ id })) },
         assignedById: ownerId && ownerId !== me.id ? me.id : null,
@@ -635,7 +701,7 @@ export async function updateTask(fd: FormData) {
       const created: string[] = [];
       for (const id of missing) {
         const copy = await tx.task.create({
-          data: { ...shared, projectId: task.projectId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
+          data: { ...shared, projectId: task.projectId, groupId: task.groupId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
         });
         created.push(copy.id);
         await joinWeek(id, copy.id, due, tx);
@@ -687,7 +753,7 @@ export async function updateTask(fd: FormData) {
 async function regroupCopies(
   fd: FormData,
   me: { id: string; name: string },
-  task: { id: string; ownerId: string | null; title: string; projectId: string | null; meetingId: string | null; createdAt: Date },
+  task: { id: string; ownerId: string | null; title: string; projectId: string | null; groupId: string | null; meetingId: string | null; createdAt: Date },
   others: { id: string; ownerId: string | null }[],
   wanted: string,
 ) {
@@ -723,7 +789,7 @@ async function regroupCopies(
     const made: [string, string][] = [];
     for (const id of missing) {
       const copy = await tx.task.create({
-        data: { ...shared, projectId: task.projectId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
+        data: { ...shared, projectId: task.projectId, groupId: task.groupId, meetingId: task.meetingId, ownerId: id, assignedById: id !== me.id ? me.id : null, createdAt: task.createdAt },
       });
       made.push([id, copy.id]);
       await joinWeek(id, copy.id, shared.due, tx);

@@ -8,11 +8,11 @@ import { PageHeader } from "@/components/shell";
 import SummaryOverview, { type StatusCounts } from "@/components/SummaryOverview";
 import TaskMap, { type MapHub, type MapPerson, type MapTask } from "@/components/TaskMap";
 import { AVATAR_COLORS } from "@/lib/avatar";
+import { byPosition } from "@/lib/folders";
 
 export const metadata: Metadata = { title: "Summary · T4C Exec Hub" };
 
-// Folder and project colors on the map, in a fixed order by creation date so a
-// folder keeps its color as others come and go. Checked for color-blind
+// Folder and project colors on the map, in the order set on the Folders page. Checked for color-blind
 // separation against white.
 const HUB_COLORS = ["#2451d6", "#0e6b3e", "#d9a514", "#d65fa3", "#6c4bd1", "#0f8a7c"];
 
@@ -30,8 +30,7 @@ export default async function SummaryPage({ searchParams }: { searchParams: Prom
     }),
     db.project.findMany({
       where: { status: { in: ["active", "done"] } },
-      select: { id: true, title: true, kind: true },
-      orderBy: { createdAt: "asc" },
+      select: { id: true, title: true, kind: true, sortOrder: true, createdAt: true },
     }),
     db.member.findMany({
       select: { id: true, name: true, role: true, avatarColor: true },
@@ -49,7 +48,9 @@ export default async function SummaryPage({ searchParams }: { searchParams: Prom
   const counts: StatusCounts = { live: 0, overdue: 0, done: 0 };
   for (const t of mapTasks) counts[t.state]++;
 
-  const hubs: MapHub[] = projects.map((p, i) => ({ id: p.id, name: p.title, kind: p.kind === "folder" ? "folder" : "project", color: HUB_COLORS[i % HUB_COLORS.length] }));
+  // Same order as the Folders page: folders first, then projects, as dragged there.
+  const ordered = [...projects.filter((p) => p.kind === "folder").sort(byPosition), ...projects.filter((p) => p.kind !== "folder").sort(byPosition)];
+  const hubs: MapHub[] = ordered.map((p, i) => ({ id: p.id, name: p.title, kind: p.kind === "folder" ? "folder" : "project", color: HUB_COLORS[i % HUB_COLORS.length] }));
   const people: MapPerson[] = members.map((m) => {
     const c = AVATAR_COLORS[m.avatarColor] ?? AVATAR_COLORS.blue;
     return { id: m.id, name: m.name, role: m.role, color: c.body, ink: c.ink };

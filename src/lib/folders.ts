@@ -18,3 +18,11 @@ export const DEFAULT_FOLDER = "Club Operations";
 // The folders above are permanent; general folders people add later can be deleted.
 export const isBuiltInFolder = (p: { kind: string; title: string }) =>
   p.kind === "folder" && FOLDERS.some((f) => f.title === p.title);
+
+// Display order: a dragged order wins; untouched ones (sortOrder 0) fall back to
+// the built-in list, then oldest first.
+export function byPosition<T extends { title: string; sortOrder: number; createdAt: Date }>(a: T, b: T) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  const fi = (t: string) => { const i = FOLDERS.findIndex((f) => f.title === t); return i === -1 ? 99 : i; };
+  return fi(a.title) - fi(b.title) || a.createdAt.getTime() - b.createdAt.getTime();
+}

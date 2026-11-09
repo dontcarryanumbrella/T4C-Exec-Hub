@@ -7,13 +7,9 @@ import { can } from "@/lib/permissions";
 import { projectBrief } from "@/lib/status";
 import { PageHeader } from "@/components/shell";
 import { Icon } from "@/components/icons";
-import { FOLDERS } from "@/lib/folders";
+import { byPosition } from "@/lib/folders";
+import Reorder from "@/components/Reorder";
 import { peopleOn } from "@/lib/tasks";
-
-const FOLDER_ORDER = (title: string) => {
-  const i = FOLDERS.findIndex((f) => f.title === title);
-  return i === -1 ? 99 : i;
-};
 
 export const metadata: Metadata = { title: "Folders · T4C Exec Hub" };
 
@@ -27,7 +23,7 @@ type Row = {
 
 // Drive-style list: click a row to open it; nothing else to read or press.
 // `newRow` adds a last row that starts a new one, like the folder tiles do.
-function ProjectList({ rows, emptyText, newRow }: { rows: Row[]; emptyText: string; newRow?: React.ReactNode }) {
+function ProjectList({ rows, emptyText, newRow, draggable }: { rows: Row[]; emptyText: string; newRow?: React.ReactNode; draggable?: boolean }) {
   if (rows.length === 0 && !newRow) return <p className="muted small" style={{ padding: "8px 12px" }}>{emptyText}</p>;
   return (
     <div className="list">
@@ -38,15 +34,22 @@ function ProjectList({ rows, emptyText, newRow }: { rows: Row[]; emptyText: stri
         <span>Where it stands</span>
         <span />
       </div>
-      {rows.map((r) => (
-        <Link key={r.id} href={`/projects/${r.id}`} className="list-row cols-project">
-          <span className="name"><Icon name="folder" /><span>{r.title}</span></span>
-          <span className="cell optional">{r.owner}</span>
-          <span className="cell optional">{r.due}</span>
-          <span className="cell">{r.where}</span>
-          <span className="row-actions"><Icon name="right" /></span>
-        </Link>
-      ))}
+      <Reorder
+        enabled={!!draggable}
+        className="reorder-item"
+        items={rows.map((r) => ({
+          id: r.id,
+          node: (
+            <Link href={`/projects/${r.id}`} className="list-row cols-project" draggable={false}>
+              <span className="name"><Icon name="folder" /><span>{r.title}</span></span>
+              <span className="cell optional">{r.owner}</span>
+              <span className="cell optional">{r.due}</span>
+              <span className="cell">{r.where}</span>
+              <span className="row-actions"><Icon name="right" /></span>
+            </Link>
+          ),
+        }))}
+      />
       {newRow}
     </div>
   );
@@ -78,8 +81,8 @@ export default async function ProjectsPage() {
       ),
     };
   };
-  const folders = projects.filter((p) => p.kind === "folder").sort((a, b) => FOLDER_ORDER(a.title) - FOLDER_ORDER(b.title));
-  const active = projects.filter((p) => p.status === "active" && p.kind !== "folder");
+  const folders = projects.filter((p) => p.kind === "folder").sort(byPosition);
+  const active = projects.filter((p) => p.status === "active" && p.kind !== "folder").sort(byPosition);
   const proposed = projects.filter((p) => p.status === "proposed" && p.kind !== "folder");
   const past = projects.filter((p) => (p.status === "done" || p.status === "declined") && p.kind !== "folder");
 
@@ -92,16 +95,23 @@ export default async function ProjectsPage() {
         <>
           <div className="section-title"><h2>General</h2></div>
           <div className="folder-grid">
-            {folders.map((f) => {
-              const open = f.tasks.filter((t) => t.status !== "done" && t.status !== "dropped").length;
-              return (
-                <Link key={f.id} href={`/projects/${f.id}`} className="folder-tile">
-                  <Icon name="folder" size={22} />
-                  <span className="folder-name">{f.title}</span>
-                  <span className="folder-meta">{open ? `${open} open` : "Empty"}</span>
-                </Link>
-              );
-            })}
+            <Reorder
+              enabled={canCreate}
+              className="reorder-item"
+              items={folders.map((f) => {
+                const open = f.tasks.filter((t) => t.status !== "done" && t.status !== "dropped").length;
+                return {
+                  id: f.id,
+                  node: (
+                    <Link href={`/projects/${f.id}`} className="folder-tile" draggable={false}>
+                      <Icon name="folder" size={22} />
+                      <span className="folder-name">{f.title}</span>
+                      <span className="folder-meta">{open ? `${open} open` : "Empty"}</span>
+                    </Link>
+                  ),
+                };
+              })}
+            />
             {canCreate && (
               <Link href="/projects/new?kind=folder" className="folder-tile folder-tile-new">
                 <Icon name="plus" size={22} />
@@ -126,6 +136,7 @@ export default async function ProjectsPage() {
         <>
           <ProjectList
             rows={active.map(row)}
+            draggable={canCreate}
             emptyText="No active projects."
             newRow={canCreate && (
               <Link href="/projects/new" className="list-row cols-project list-row-new">
