@@ -634,6 +634,8 @@ export async function createTask(fd: FormData) {
     if (ownerId && ownerId !== me.id) {
       await notify(ownerId, me.id, `${me.name} gave you “${title}”${project ? ` in ${project.title}` : ""}. ${cardPlacement(Number(onCard), 1)}`, `/?task=${task.id}`);
     }
+    // People added alongside the owner get it on their week too, if it fits.
+    for (const id of coOwnerIds) await joinWeek(id, task.id, task.due);
     for (const id of coOwnerIds) {
       if (id !== me.id) await notify(id, me.id, `${me.name} added you to “${title}”${project ? ` in ${project.title}` : ""}.`, `/?task=${task.id}`);
     }
@@ -720,6 +722,7 @@ export async function updateTask(fd: FormData) {
   if (reassigned && ownerId && ownerId !== me.id) {
     await notify(ownerId, me.id, `${me.name} gave you “${task.title}”. ${cardPlacement(Number(result.onCard), 1)}`, `/?task=${task.id}`);
   }
+  if (status !== "done" && status !== "dropped") for (const id of addedCoOwners) await joinWeek(id, task.id, due);
   for (const id of addedCoOwners) {
     if (id !== me.id) await notify(id, me.id, `${me.name} added you to “${task.title}”.`, `/?task=${task.id}`);
   }
@@ -1295,6 +1298,7 @@ export async function addActionItem(fd: FormData) {
     if (ownerId && ownerId !== me.id) {
       await notify(ownerId, me.id, `${me.name} gave you an action item: “${title}”. ${cardPlacement(Number(onCard), 1)}`, `/?task=${task.id}`);
     }
+    for (const id of coOwnerIds) await joinWeek(id, task.id, task.due);
     for (const id of coOwnerIds) {
       if (id !== me.id) await notify(id, me.id, `${me.name} added you to an action item: “${title}”.`, `/?task=${task.id}`);
     }
